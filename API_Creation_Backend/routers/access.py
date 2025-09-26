@@ -1,94 +1,4 @@
-# from fastapi import APIRouter, Depends, HTTPException, Query
-# from sqlalchemy.ext.asyncio import AsyncSession
-# from sqlalchemy import select, delete
-# from db import get_session
-# from models import User, Domain, UserDomainAccess
-# from schemas import AccessGrant, AccessOut
-# from auth_dep import get_current_user
 
-# router = APIRouter(prefix="/access", tags=["access"])
-
-# def _is_org_admin(u: User) -> bool:
-#     return (u.role or "").lower() == "org_admin"
-
-# def _is_suborg_admin(u: User) -> bool:
-#     return (u.role or "").lower() == "suborg_admin"
-
-# @router.post("/grant", response_model=AccessOut, status_code=201)
-# async def grant_access(payload: AccessGrant,
-#                        session: AsyncSession = Depends(get_session),
-#                        admin: User = Depends(get_current_user)):
-#     target = await session.get(User, payload.user_id)
-#     dom = await session.get(Domain, payload.domain_id)
-#     if not target or not dom:
-#         raise HTTPException(status_code=404, detail="User or Domain not found")
-#     if target.org_id != dom.org_id:
-#         raise HTTPException(status_code=400, detail="User and Domain belong to different orgs")
-
-#     if _is_org_admin(admin):
-#         if admin.org_id != dom.org_id:
-#             raise HTTPException(status_code=403, detail="Org admin cannot manage another org")
-#     elif _is_suborg_admin(admin):
-#         if admin.org_id != dom.org_id or admin.suborg_id != dom.suborg_id:
-#             raise HTTPException(status_code=403, detail="Suborg admin can manage only their suborg")
-#     else:
-#         raise HTTPException(status_code=403, detail="Only admins can grant access")
-
-#     exists = await session.execute(
-#         select(UserDomainAccess).where(UserDomainAccess.user_id == payload.user_id,
-#                                        UserDomainAccess.domain_id == payload.domain_id)
-#     )
-#     if exists.scalar_one_or_none():
-#         raise HTTPException(status_code=409, detail="Access already granted")
-
-#     uda = UserDomainAccess(user_id=payload.user_id, domain_id=payload.domain_id, granted_by=admin.user_id)
-#     session.add(uda)
-#     await session.commit()
-#     return AccessOut(user_id=payload.user_id, domain_id=payload.domain_id)
-
-# @router.delete("/revoke")
-# async def revoke_access(user_id: int, domain_id: int,
-#                         session: AsyncSession = Depends(get_session),
-#                         admin: User = Depends(get_current_user)):
-#     target = await session.get(User, user_id)
-#     dom = await session.get(Domain, domain_id)
-#     if not target or not dom:
-#         raise HTTPException(status_code=404, detail="User or Domain not found")
-
-#     if _is_org_admin(admin):
-#         if admin.org_id != dom.org_id:
-#             raise HTTPException(status_code=403, detail="Org admin cannot manage another org")
-#     elif _is_suborg_admin(admin):
-#         if admin.org_id != dom.org_id or admin.suborg_id != dom.suborg_id:
-#             raise HTTPException(status_code=403, detail="Suborg admin can manage only their suborg")
-#     else:
-#         raise HTTPException(status_code=403, detail="Only admins can revoke access")
-
-#     res = await session.execute(
-#         delete(UserDomainAccess).where(UserDomainAccess.user_id == user_id,
-#                                        UserDomainAccess.domain_id == domain_id)
-#     )
-#     await session.commit()
-#     if res.rowcount == 0:
-#         raise HTTPException(status_code=404, detail="Access mapping not found")
-#     return {"message": "Access revoked"}
-
-# @router.get("/user-domains", response_model=list[AccessOut])
-# async def list_user_access(user_id: int = Query(...),
-#                            session: AsyncSession = Depends(get_session),
-#                            admin: User = Depends(get_current_user)):
-#     target = await session.get(User, user_id)
-#     if not target:
-#         raise HTTPException(status_code=404, detail="User not found")
-#     # admins can inspect within scope, non-admins can view only self
-#     if not (_is_org_admin(admin) or _is_suborg_admin(admin) or admin.user_id == user_id):
-#         raise HTTPException(status_code=403, detail="Not allowed")
-
-#     res = await session.execute(
-#         select(UserDomainAccess).where(UserDomainAccess.user_id == user_id)
-#     )
-#     rows = res.scalars().all()
-#     return [AccessOut(user_id=r.user_id, domain_id=r.domain_id) for r in rows]
 
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -120,9 +30,9 @@ async def _ensure_same_org(session: AsyncSession, user: User, domain_id: int) ->
     return dom
 
 
-# =========================================================
+
 #  Access mapping (grant / revoke / list)
-# =========================================================
+
 
 @router.post("/grant", response_model=AccessOut, status_code=201)
 async def grant_access(
@@ -143,7 +53,7 @@ async def grant_access(
 
     # Scope enforcement
     if _is_org_admin(admin):
-        # already ensured same org
+       
         pass
     elif _is_suborg_admin(admin):
         if admin.suborg_id != dom.suborg_id:
@@ -247,9 +157,9 @@ async def list_user_access(
     return [AccessOut(user_id=r.user_id, domain_id=r.domain_id) for r in rows]
 
 
-# =========================================================
+
 #  Admin management (promote / demote)
-# =========================================================
+
 
 @router.post("/promote/org-admin", response_model=UserOut)
 async def promote_org_admin(
@@ -366,9 +276,9 @@ async def demote_suborg_admin(
     return target
 
 
-# =========================================================
+
 #  Admin listing (org / suborg)
-# =========================================================
+
 
 @router.get("/org-admins", response_model=list[UserOut])
 async def list_org_admins(
