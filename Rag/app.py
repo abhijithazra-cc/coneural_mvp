@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI,File, UploadFile
+from fastapi import FastAPI,File, UploadFile,Query
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import sys, os
 from PdfLoader import PdfLoader
@@ -71,11 +72,53 @@ async def gen_store():
 @app.post("/query")
 async def get_relevant_documents_chunks(query:str="",search_type="similarity",top_n_chunks:int=1):
     "Get Relevent Documents Chunk on basis of query"
+    s=time.monotonic()
     retriever.set_retreiver(vector_store=vectorStore.get_vector_store(),search_type=search_type,top_n=top_n_chunks)
     docs=retriever.get_relevant_document(query=query)
     docs=llm.generate_answer(context=docs,query=query)
+    e=time.monotonic()
+    return {"response":docs,"processing_time":e-s}
+
+def stream_text():
+    for i in range(5):
+        yield f"Chunk {i+1}\n"
+        time.sleep(1)  # simulate delay (like a model generating text)
+    yield "Done!\n"
+
+@app.get("/stream")
+async def stream(query:str = Query(..., description="Your query text")):
+    retriever.set_retreiver(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=5)
+    docs=retriever.get_relevant_document(query=query)
     
-    return docs
+    docs=llm.generate_stream_answer(context=docs,query=query)
+    # print(llm.model_response)
+    # data=llm.get_model_response()
+    # for res in docs:
+    #     print(res.content,end=' ')
+    def event_stream(docs):
+         for res in docs:
+                 print(res.content)
+                 yield res.content
+                 time.sleep(1)
+    return StreamingResponse(event_stream(docs), media_type="application/json")
+    # return {"response":"success"}
+@app.get("/query-stream")
+async def get_relevant_documents_chunks(query:str="",search_type="similarity",top_n_chunks:int=1):
+    "Get Relevent Documents Chunk on basis of query"
+    
+
+
+    s=time.time()
+    retriever.set_retreiver(vector_store=vectorStore.get_vector_store(),search_type=search_type,top_n=top_n_chunks)
+    docs=retriever.get_relevant_document(query=query)
+    
+    docs=llm.generate_stream_answer(context=docs,query=query)
+    # print(type(docs))
+    llm.set_model_response(docs)
+    e=time.time()
+    # return StreamingResponse(event_stream(docs),media_type='application/json')
+    return {"response":docs,"processing_time":e-s}
+
 @app.post("/show_relevent_chunk")
 async def get_relevant_documents_chunks(query:str="",search_type="similarity",top_n_chunks:int=1):
     "Get Relevent Documents Chunk on basis of query"
@@ -108,7 +151,7 @@ async def upload_file(file: UploadFile = File(...)):
         f.write(content)
     file_path=os.path.abspath(file.filename)
     loader.load_document(file_path)
-    chuncks=splitter.split_documents(docs=loader.get_document(),chunk_size=100,chunk_overlap=50)
+    chuncks=splitter.split_documents(docs=loader.get_document(),chunk_size=1000,chunk_overlap=100)
     vectorStore.set_vector_store(chuncks,embeddings=embeddings)
     e=time.monotonic()
 
