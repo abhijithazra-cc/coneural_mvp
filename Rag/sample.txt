@@ -1,0 +1,12 @@
+AI, or artificial intelligence, is technology that enables machines to simulate human intelligence by performing tasks like learning, reasoning, and problem-solving. It allows computers to learn from data, recognize patterns, make decisions, and understand language. Common examples include virtual assistants, recommendation systems, and self-driving cars. 
+Key characteristics of AI
+Simulates human intelligence: AI aims to replicate cognitive functions like learning, comprehension, and decision-making. 
+Learns from data: Instead of being explicitly programmed for every task, AI systems learn and adapt by analyzing large datasets. 
+Performs complex tasks: AI can handle tasks that were once exclusively human, such as understanding speech, recognizing objects, and translating languages. 
+Makes autonomous decisions: AI enables machines to make decisions and take actions with minimal human intervention, as seen in autonomous vehicles. 
+Examples of AI in action
+Virtual assistants: AI powers assistants like Siri and Alexa, allowing them to understand and respond to voice commands. 
+Recommendation systems: Streaming services and online retailers use AI to suggest movies, products, and other content based on your past activity. 
+Healthcare: AI helps doctors by analyzing medical images and assisting in diagnosis. 
+Finance: AI is used to detect fraudulent activity and manage finances. 
+Transportation: AI is the core technology behind self-driving cars
