@@ -3,7 +3,9 @@ import os
 import math
 import hashlib
 from typing import List
-
+from Rag import *
+import os
+from Rag.ai import embeddings ,loader,splitter,vectorStore,retriever,llm
 # Optional OpenAI client
 try:
     from openai import OpenAI
@@ -33,29 +35,38 @@ def _l2norm(v: List[float]) -> List[float]:
 
 # Embeddings
 
-def generate_embedding(text: str) -> List[float]:
+def generate_embedding(text:str) -> List[float]:
     """
     Generate an embedding for text.
     - Uses OpenAI API if available.
     - Falls back to a deterministic 256-dim pseudo-embedding (hash-based)
       for testing without an API key.
     """
-    text = (text or "").strip()
-    if not text:
-        return []
+    
+    return embeddings.embed_query(text)
+# def generate_embedding(text: str) -> List[float]:
+#     """
+#     Generate an embedding for text.
+#     - Uses OpenAI API if available.
+#     - Falls back to a deterministic 256-dim pseudo-embedding (hash-based)
+#       for testing without an API key.
+#     """
+#     text = (text or "").strip()
+#     if not text:
+#         return []
 
-    # Use OpenAI if available
-    if _client:
-        r = _client.embeddings.create(model=_EMBED_MODEL, input=text)
-        return _l2norm(r.data[0].embedding)
+#     # Use OpenAI if available
+#     if _client:
+#         r = _client.embeddings.create(model=_EMBED_MODEL, input=text)
+#         return _l2norm(r.data[0].embedding)
 
-    # Fallback: 256-dim deterministic embedding
-    h = hashlib.sha256(text.encode("utf-8")).digest()
-    out = []
-    for i in range(256):
-        b = h[i % len(h)]
-        out.append((b - 128) / 128.0)
-    return _l2norm(out)
+#     # Fallback: 256-dim deterministic embedding
+#     h = hashlib.sha256(text.encode("utf-8")).digest()
+#     out = []
+#     for i in range(256):
+#         b = h[i % len(h)]
+#         out.append((b - 128) / 128.0)
+#     return _l2norm(out)
 
 
 
@@ -76,19 +87,24 @@ def cosine(a: List[float], b: List[float]) -> float:
 
 # Chunking
 
-def chunk_text(text: str, max_chars: int = 1200, overlap: int = 150) -> List[str]:
-    """
-    Simple sliding window chunker.
-    Produces ~1200-char chunks with 150-char overlaps.
-    """
-    if not text:
-        return []
-    text = text.replace("\r", " ")
-    parts, i, n = [], 0, len(text)
-    while i < n:
-        j = min(i + max_chars, n)
-        parts.append(text[i:j])
-        if j >= n:
-            break
-        i = max(j - overlap, 0)
-    return parts[:100]  # safety cap
+# def chunk_text(text: str, max_chars: int = 1200, overlap: int = 150) -> List[str]:
+#     """
+#     Simple sliding window chunker.
+#     Produces ~1200-char chunks with 150-char overlaps.
+#     """
+#     if not text:
+#         return []
+#     text = text.replace("\r", " ")
+#     parts, i, n = [], 0, len(text)
+#     while i < n:
+#         j = min(i + max_chars, n)
+#         parts.append(text[i:j])
+#         if j >= n:
+#             break
+#         i = max(j - overlap, 0)
+#     return parts[:100]  # safety cap
+
+
+def chunk_text(docs, max_chars: int = 1200, overlap: int = 150):
+    chunks=splitter.split_documents(docs=docs,chunk_size=max_chars,chunk_overlap=overlap)
+    return chunks

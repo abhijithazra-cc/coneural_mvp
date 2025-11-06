@@ -17,7 +17,8 @@ from models import User, Domain, OrgDocument, UserDomainAccess, DocEmbedding
 from schemas import AskRequest, AskResponse
 from auth_dep import get_current_user
 from utils.embeddings import generate_embedding, cosine
-
+from Rag.ai import embeddings ,loader,splitter,vectorStore,retriever,llm
+# from Rag.ai import *
 # -------- OpenAI setup --------
 from openai import OpenAI
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -88,7 +89,7 @@ async def _semantic_search(
     org_id: int,
     suborg_id: int,
     allowed_domains: List[int],
-    query_emb: List[float],
+    query: str,
     top_k: int = 6,
 ) -> Tuple[List[str], List[int]]:
     if not allowed_domains:
@@ -96,11 +97,9 @@ async def _semantic_search(
 
     q = (
         select(
-            DocEmbedding.embed_id,
-            DocEmbedding.doc_id,
             DocEmbedding.chunk_text,
             DocEmbedding.embedding,
-            OrgDocument.domain_id,
+
         )
         .join(OrgDocument, OrgDocument.doc_id == DocEmbedding.doc_id)
         .where(
@@ -111,19 +110,74 @@ async def _semantic_search(
         .limit(3000)
     )
     rows = (await session.execute(q)).all()
+    # print("rows",rows)
+    if not rows:
+        raise HTTPException(status_code=403, detail="You cannot query another suborg")
+    # print("rows",rows,print(type(rows[0])))
+    vectorStore.set_vector_store(docs=rows,embeddings=embeddings)
+    retriever.set_retreiver(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=10)
+    docs=retriever.get_relevant_document(query=query)
+    answer=llm.generate_answer(context=docs,query=query)
+    # print("answer")
+    # scored: List[Tuple[float, int, str]] = []
+    # for _eid, doc_id, chunk, emb, _dom in rows:
+    #     if not emb:
+    #         continue
+    #     sim = cosine(query_emb, emb)
+    #     scored.append((sim, doc_id, chunk))
 
-    scored: List[Tuple[float, int, str]] = []
-    for _eid, doc_id, chunk, emb, _dom in rows:
-        if not emb:
-            continue
-        sim = cosine(query_emb, emb)
-        scored.append((sim, doc_id, chunk))
+    # scored.sort(key=lambda t: t[0], reverse=True)
+    # top = scored[:top_k]
+    # snippets = [c[:1500] for _, __, c in top]   # trimmed
+    # sources = [doc_id for _, doc_id, __ in top]
+    # return snippets, sources
 
-    scored.sort(key=lambda t: t[0], reverse=True)
-    top = scored[:top_k]
-    snippets = [c[:1500] for _, __, c in top]   # trimmed
-    sources = [doc_id for _, doc_id, __ in top]
-    return snippets, sources
+    return answer.content
+
+
+# async def _semantic_search(
+#     session: AsyncSession,
+#     org_id: int,
+#     suborg_id: int,
+#     allowed_domains: List[int],
+#     query_emb: List[float],
+#     top_k: int = 6,
+# ) -> Tuple[List[str], List[int]]:
+#     if not allowed_domains:
+#         return [], []
+
+#     q = (
+#         select(
+
+#             DocEmbedding.chunk_text,
+#             DocEmbedding.embedding,
+
+#         )
+#         .join(OrgDocument, OrgDocument.doc_id == DocEmbedding.doc_id)
+#         .where(
+#             OrgDocument.org_id == org_id,
+#             OrgDocument.suborg_id == suborg_id,
+#             OrgDocument.domain_id.in_(allowed_domains),
+#         )
+#         .limit(3000)
+#     )
+#     rows = (await session.execute(q)).all()
+#     print("rows",rows,print(type(rows[0])))
+#     # scored: List[Tuple[float, int, str]] = []
+#     # for _eid, doc_id, chunk, emb, _dom in rows:
+#     #     if not emb:
+#     #         continue
+#     #     sim = cosine(query_emb, emb)
+#     #     scored.append((sim, doc_id, chunk))
+
+#     # scored.sort(key=lambda t: t[0], reverse=True)
+#     # top = scored[:top_k]
+#     # snippets = [c[:1500] for _, __, c in top]   # trimmed
+#     # sources = [doc_id for _, doc_id, __ in top]
+#     # return snippets, sources
+#     snippets=""
+#     sources=""
+#     return snippets, sources
 
 
 # Main /ask endpoint
@@ -148,18 +202,20 @@ async def ask(
     allowed = await _allowed_domain_ids(session, user, payload.org_id, payload.suborg_id)
     if not allowed:
         raise HTTPException(status_code=403, detail="You have no domain access. Ask an admin to grant it.")
-
+     
     # Embedding search
-    q_emb = generate_embedding(payload.query)
-    snippets, sources = await _semantic_search(session, payload.org_id, payload.suborg_id, allowed, q_emb)
+    # q_emb = generate_embedding(payload.query)
+    answer = await _semantic_search(session, payload.org_id, payload.suborg_id, allowed, query=payload.query)
+    # snippets, sources = await _semantic_search(session, payload.org_id, payload.suborg_id, allowed, query=payload.query)
 
-    if not snippets:
-        return AskResponse(
-            allowed_domains_used=allowed,
-            sources=[],
-            answer="I didn’t find relevant context in your documents, but you can still ask me general questions.",
-        )
+    # if not snippets:
+    #     return AskResponse(
+    #         allowed_domains_used=allowed,
+    #         sources=[],
+    #         answer="I didn’t find relevant context in your documents, but you can still ask me general questions.",
+    #     )
 
     # Answer via hybrid LLM
-    answer = _call_openai(payload.query, snippets)
-    return AskResponse(allowed_domains_used=allowed, sources=sources, answer=answer)
+    # answer = _call_openai(payload.query, snippets)
+    # return AskResponse(allowed_domains_used=allowed, sources=sources, answer=answer)
+    return AskResponse(allowed_domains_used=allowed, sources=[], answer=answer)

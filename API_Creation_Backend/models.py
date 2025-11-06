@@ -5,8 +5,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.mysql import LONGBLOB
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
-
-Base = declarative_base()
+from db import Base
+# Base = declarative_base()
 
 
 
