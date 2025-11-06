@@ -53,10 +53,12 @@ async def upload_org_document(
 
     # ---------- read + extract ----------
     raw = await file.read()
-    text = extract_text(raw, file.filename, file.content_type)
+    text,docs = extract_text(raw, file.filename, file.content_type)
+    # print("text",text)
+    # text=""
     if not text:
         text = "[[NO TEXT EXTRACTED]]"
-
+    # print(text[:200])
     # save document 
     doc = OrgDocument(
         org_id=org_id,
@@ -74,13 +76,15 @@ async def upload_org_document(
 
     # embeddings 
     if text and not text.startswith("[[NO TEXT EXTRACTED]]"):
-        chunks = chunk_text(text, max_chars=1500, overlap=200)
+        chunks = chunk_text(docs, max_chars=1500, overlap=200)
+        print(chunks)
+
         for ch in chunks:
-            vec = generate_embedding(ch)
+            vec = generate_embedding(ch.page_content)
             if vec:
                 session.add(DocEmbedding(
                     doc_id=doc.doc_id,
-                    chunk_text=ch,
+                    chunk_text=ch.page_content,
                     embedding=vec,
                 ))
 
