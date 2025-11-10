@@ -61,7 +61,7 @@ async def create_suborg(payload: SuborgCreate, session: AsyncSession = Depends(g
         session.add(dom)
         await session.flush()
         # print(dom.domain_id)
-        vc=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{payload.org_id}/dept/{dom.domain_id}")
+        vc=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{payload.org_id}\dept\{dom.domain_id}")
         # vc=FaissVectorstore(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{payload.org_id}/dept/{dom.domain_id}")
         # vc._load_or_create_store()
 

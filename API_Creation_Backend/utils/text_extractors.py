@@ -1,9 +1,11 @@
 # utils/text_extractors.py
 from typing import Optional
+
+from fastapi import HTTPException
 from Rag import *
 import os
 from Rag.ai import embeddings ,loader,splitter,vectorStore,retriever,llm
-
+from io import BytesIO
 def extract_full_text(pages_data):
     """
     Combine page_content from all pages into a single text string.
@@ -23,29 +25,43 @@ def extract_full_text(pages_data):
 
     return res
 
-def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str]) -> str:
+def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str],base_path="assets") -> str:
     """
     Extracts text from common file types: PDF, DOCX, TXT.
     Falls back to UTF-8 decode if extractors fail.
     """
     name = (filename or "").lower()
     mt = (mimetype or "").lower()
+    os.makedirs(base_path, exist_ok=True)
 
+    # Build full path
+    file_path = os.path.join(base_path, name)
     try:
         # print("hi")
-        with open(f"{name}", "wb") as f:
-            f.write(file_bytes)
-        file_path=os.path.abspath(name)
-    
+        
+    #     os.makedirs(base_path, exist_ok=True)
+
+    # # Build full path
+    #     file_path = os.path.join(base_path, name)
+
+    # Check if file exists
+        if os.path.exists(file_path):
+           raise HTTPException(detail=f"File '{name}' already exists in '{base_path}'",status_code=503)
+        with open(file_path, "wb") as f:
+             f.write(file_bytes)
+        print("file path",file_path)
         loader.load_document(file_path)
         docs=loader.get_document()
         # print(docs)
         content=extract_full_text(docs)
         # print("content",content)
         return content,docs
-
+    
+    
     except Exception:
-        return file_bytes.decode("utf-8", errors="ignore")
+        if os.path.exists(file_path):
+           raise HTTPException(detail=f"File '{name}' already exists in '{base_path}'",status_code=403)
+        # return file_bytes.decode("utf-8", errors="ignore")
 # def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str]) -> str:
 #     """
 #     Extracts text from common file types: PDF, DOCX, TXT.

@@ -16,7 +16,7 @@ from Rag.FaissVectorstore import FaissVectorstore
 from Rag.Retriever import Retriever
 from Rag.OpenaiModel import OpenaiModel
 import time
-BASE_DIR="vectorstores/org"
+BASE_DIR="vectorstores\org"
 load_dotenv()
 router = APIRouter(prefix="/bot", tags=["ChatBot"])
 

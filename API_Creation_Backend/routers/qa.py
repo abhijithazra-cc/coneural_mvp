@@ -11,6 +11,8 @@ from auth_dep import get_current_user
 from utils.embeddings import generate_embedding, cosine
 from Rag.ai import embeddings ,loader,splitter,retriever,llm,BASE_DIR
 from Rag.VectorManager import vectorManager
+from langchain_classic.retrievers.ensemble import EnsembleRetriever
+
 # from Rag.ai import *
 # -------- OpenAI setup --------
 # from openai import OpenAI
@@ -103,17 +105,28 @@ async def _semantic_search(
         .limit(3000)
     )
     rows = (await session.execute(q)).all()
-
+    
     if not rows:
         raise HTTPException(status_code=403, detail="You cannot query another suborg")
-    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{allowed_domains[0]}")
+    # print("allowed domain",allowed_domains[0])
+    docs_list=[]
+    retrieval_list=[]
+    for dom_id in allowed_domains:
+
+        vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\\{org_id}\\dept\\{dom_id}")
     # vectorStore.set_vector_store(docs=rows,embeddings=embeddings)
-    retriever.set_retreiver(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=10)
-    docs=retriever.get_relevant_document(query=query)
-    answer=llm.generate_answer(context=docs,query=query)
+        rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=10)
+        retrieval_list.append(rv)
+        # docs=rv.get_relevant_document(query=query)
+        # docs_list.extend(docs)
+        
+    rvm= EnsembleRetriever(retrievers=retrieval_list)
+    docs_list=rvm.invoke(input=query)
+    print("all docs list",docs_list)
+    answer=llm.generate_answer(context=docs_list,query=query)
 
 
-    return answer.content
+    return answer.content,docs_list
 
 
 # async def _semantic_search(
@@ -160,7 +173,7 @@ async def _semantic_search(
 
 
 # Main /ask endpoint
-
+import time
 @router.post("/ask", response_model=AskResponse)
 async def ask(
     payload: AskRequest,
@@ -168,6 +181,7 @@ async def ask(
     user: User = Depends(get_current_user),
 ):
     # Org/suborg scope check
+    s=time.monotonic()
     if user.org_id != payload.org_id:
         raise HTTPException(status_code=403, detail="You cannot query another organization's data")
     if (
@@ -185,11 +199,11 @@ async def ask(
      
     # query search
 
-    answer = await _semantic_search(session, payload.org_id, payload.suborg_id, allowed, query=payload.query)
+    answer ,doc_list= await _semantic_search(session, payload.org_id, payload.suborg_id, allowed, query=payload.query)
     
-
+    print("time take for query",time.monotonic()-s)
     # return AskResponse(allowed_domains_used=allowed, sources=sources, answer=answer)
-    return AskResponse(allowed_domains_used=allowed, sources=[], answer=answer)
+    return AskResponse(allowed_domains_used=allowed, sources=doc_list, answer=answer)
 
 
 

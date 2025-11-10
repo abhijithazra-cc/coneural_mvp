@@ -1,7 +1,7 @@
 
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
-
+from langchain_core.documents import Document
 
 
 # Organizations
@@ -179,6 +179,6 @@ class AskRequest(BaseModel):
 
 class AskResponse(BaseModel):
     allowed_domains_used: List[int]
-    sources: List[int]   # doc_ids used
+    sources: List[Document]   # doc_ids used
     answer: str
 

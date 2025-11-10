@@ -36,6 +36,7 @@ async def upload_org_document(
       - save to org_documents + doc_embeddings
     """
     # ---------- validate ----------
+    
     org = await session.get(Organization, org_id)
     if not org:
         raise HTTPException(status_code=400, detail="Invalid org_id")
@@ -55,7 +56,8 @@ async def upload_org_document(
     # ---------- read + extract ----------
     raw = await file.read()
     text,docs = extract_text(raw, file.filename, file.content_type)
-
+    # print(text)
+    # return ""
     if not text:
         text = "[[NO TEXT EXTRACTED]]"
 
@@ -72,9 +74,9 @@ async def upload_org_document(
     )
     session.add(doc)
     await session.flush()  
-    print("list of vectorStore path",vectorManager.list_stores())
+    # print("list of vectorStore path",vectorManager.list_stores())
     vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{domain_id}")
-    print("list of vectorStore path",vectorManager.list_stores())
+    # print("list of vectorStore path",vectorManager.list_stores())
     # vectorStore=FaissVectorstore(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{domain_id}")
     # embeddings 
     if text and not text.startswith("[[NO TEXT EXTRACTED]]"):

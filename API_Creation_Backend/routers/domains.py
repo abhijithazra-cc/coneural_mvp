@@ -37,7 +37,7 @@ async def create_domain(payload: DomainCreate, session: AsyncSession = Depends(g
     session.add(dom)
     await session.commit()
     await session.refresh(dom)
-    vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{payload.org_id}/dept/{dom.domain_id}")
+    vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\\{payload.org_id}\\dept\\{dom.domain_id}")
     # dom_vector=FaissVectorstore(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{payload.org_id}/dept/{dom.domain_id}")
     # dom_vector._load_or_create_store()
     return dom
