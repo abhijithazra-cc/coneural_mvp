@@ -28,7 +28,7 @@ async def create_org(payload: OrgCreate, session: AsyncSession = Depends(get_ses
     # check duplicate admin email
     if (await session.execute(select(User).where(User.email == payload.admin_email))).scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Admin email already in use")
-    org_vector=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org.org_id}")
+    org_vector=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{org.org_id}")
     # org_vector=FaissVectorstore(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org.org_id}")
     # org_vector._load_or_create_store()
     # create admin user
