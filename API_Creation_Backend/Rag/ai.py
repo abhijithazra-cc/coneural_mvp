@@ -16,6 +16,7 @@ from Rag.FaissVectorstore import FaissVectorstore
 from Rag.Retriever import Retriever
 from Rag.OpenaiModel import OpenaiModel
 import time
+BASE_DIR="vectorstores/org"
 load_dotenv()
 router = APIRouter(prefix="/bot", tags=["ChatBot"])
 
@@ -26,7 +27,7 @@ embeddings=OpenAIEmbeddings(api_key=os.getenv('OPENAI_API_KEY'),model='text-embe
 # loader=TxtLoader()
 loader=PdfLoader()
 splitter=CharacterSplitter()
-vectorStore=FaissVectorstore()
+vectorStore=""
 retriever=Retriever()
 llm=OpenaiModel()
 

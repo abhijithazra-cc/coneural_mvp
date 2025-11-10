@@ -15,6 +15,8 @@ from FaissVectorstore import FaissVectorstore
 from Retriever import Retriever
 from OpenaiModel import OpenaiModel
 import time
+from ChromadbVectorstore import ChromadbVectorstore
+from fastapi import BackgroundTasks
 load_dotenv()
 router = APIRouter(prefix="/bot", tags=["ChatBot"])
 
@@ -25,7 +27,9 @@ embeddings=OpenAIEmbeddings(api_key=os.getenv('OPENAI_API_KEY'),model='text-embe
 # loader=TxtLoader()
 loader=PdfLoader()
 splitter=CharacterSplitter()
-vectorStore=FaissVectorstore()
+# vectorStore=ChromadbVectorstore(embeddings=embeddings)
+vectorStore=FaissVectorstore(embeddings=embeddings)
+vectorStore._load_or_create_store()
 retriever=Retriever()
 llm=OpenaiModel()
 
@@ -88,11 +92,24 @@ async def get_relevant_documents_chunks(query:str="",search_type="similarity",to
 
     
     return docs
-
+@router.get("/show_all_doc_id")
+async def get_all_doc_ids():
+    ids=vectorStore.get_document_ids()
+    return {"ids":ids}
+@router.get("/show_chunk_by_id/{doc_id}")
+async def get_chunk(doc_id):
+    c=vectorStore.get_chunks_by_doc_id(doc_id=doc_id)
+    return c
+@router.get("/delete_chunk_by_id/{doc_id}")
+async def get_chunk(doc_id):
+    vectorStore.delete_by_doc_id(doc_id=doc_id)
+    return {"response":f"chunk deleted belongs to docs {doc_id}"}
+   
 @router.get("/show_all_chunks")
 async def get_chunks():
     "See Uploaded Document"
     chunks=splitter.split_documents(docs=loader.get_document(),chunk_size=1000,chunk_overlap=100)
+
     
     return  {"chunks":chunks,"chunks_len":len(chunks)}
 
@@ -114,7 +131,9 @@ async def upload_file(file: UploadFile = File(...)):
     
     loader.load_document(file_path)
     chuncks=splitter.split_documents(docs=loader.get_document(),chunk_size=1000,chunk_overlap=100)
-    vectorStore.set_vector_store(chuncks,embeddings=embeddings)
+    # BackgroundTasks.add_task(vectorStore.set_vector_store,chuncks)
+    vectorStore.add_documents(docs=chuncks,doc_id=1)
+    # vectorStore.set_vector_store(chuncks)
     e=time.monotonic()
 
     return {"filename": file.filename, "size": len(content),"message":"vectore store generated peform query","process_time":e-s}

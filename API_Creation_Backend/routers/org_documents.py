@@ -8,11 +8,12 @@ from sqlalchemy import select
 from db import get_session
 from models import OrgDocument, Organization, SubOrganization, Domain, User, DocEmbedding
 from schemas import OrgDocumentOut
-
+from Rag.ai import embeddings,BASE_DIR
 #  Import shared utils
 from utils.text_extractors import extract_text
 from utils.embeddings import chunk_text, generate_embedding
-
+from Rag.FaissVectorstore import FaissVectorstore
+from Rag.VectorManager import vectorManager
 router = APIRouter(prefix="/org-documents", tags=["org_documents"])
 
 
@@ -54,12 +55,10 @@ async def upload_org_document(
     # ---------- read + extract ----------
     raw = await file.read()
     text,docs = extract_text(raw, file.filename, file.content_type)
-    # print("text",text)
-    # text=""
+
     if not text:
         text = "[[NO TEXT EXTRACTED]]"
-    # print(text[:200])
-    # save document 
+
     doc = OrgDocument(
         org_id=org_id,
         suborg_id=suborg_id,
@@ -73,11 +72,16 @@ async def upload_org_document(
     )
     session.add(doc)
     await session.flush()  
-
+    print("list of vectorStore path",vectorManager.list_stores())
+    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{domain_id}")
+    print("list of vectorStore path",vectorManager.list_stores())
+    # vectorStore=FaissVectorstore(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{domain_id}")
     # embeddings 
     if text and not text.startswith("[[NO TEXT EXTRACTED]]"):
         chunks = chunk_text(docs, max_chars=1500, overlap=200)
-        print(chunks)
+        # vectorStore.add_documents(d)
+        # vectorStore.add_documents(doc)
+        vectorStore.add_documents(documents=chunks,doc_id=doc.doc_id)
 
         for ch in chunks:
             vec = generate_embedding(ch.page_content)
