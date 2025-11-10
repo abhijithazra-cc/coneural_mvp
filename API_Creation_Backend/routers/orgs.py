@@ -4,10 +4,14 @@ from sqlalchemy import select
 from db import get_session
 from models import Organization, User
 from schemas import OrgCreate, OrgOut, OrgUpdate, OrgAdminOut
-
+from Rag.ai import embeddings ,loader,splitter,vectorStore,retriever,llm,BASE_DIR
+from Rag.FaissVectorstore import FaissVectorstore
+from Rag.VectorManager import vectorManager
 router = APIRouter(prefix="/orgs", tags=["organizations"])
 
 # Create Organization
+
+
 
 @router.post("", response_model=OrgOut, status_code=201)
 async def create_org(payload: OrgCreate, session: AsyncSession = Depends(get_session)):
@@ -20,11 +24,13 @@ async def create_org(payload: OrgCreate, session: AsyncSession = Depends(get_ses
     org = Organization(name=payload.name, isDeleted=0)
     session.add(org)
     await session.flush()  # to get org_id
-
+    
     # check duplicate admin email
     if (await session.execute(select(User).where(User.email == payload.admin_email))).scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Admin email already in use")
-
+    org_vector=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org.org_id}")
+    # org_vector=FaissVectorstore(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org.org_id}")
+    # org_vector._load_or_create_store()
     # create admin user
     admin_user = User(
         org_id=org.org_id,
