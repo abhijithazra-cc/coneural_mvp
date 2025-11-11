@@ -75,7 +75,7 @@ async def upload_org_document(
     session.add(doc)
     await session.flush()  
     # print("list of vectorStore path",vectorManager.list_stores())
-    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{domain_id}")
+    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{org_id}\dept\{domain_id}")
     # print("list of vectorStore path",vectorManager.list_stores())
     # vectorStore=FaissVectorstore(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{domain_id}")
     # embeddings 

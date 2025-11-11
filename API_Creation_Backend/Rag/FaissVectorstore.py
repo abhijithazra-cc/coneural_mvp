@@ -16,7 +16,7 @@ class FaissVectorstore(IVectorstore):
      #    #   val._get_relevant_documents()
      # def get_vector_store(self):
      #      return self.vectorstore
-    def __init__(self,embeddings,persist_dir="vectorstores/org"):
+    def __init__(self,embeddings,persist_dir="vectorstores\org"):
         self.persist_dir = persist_dir
         os.makedirs(persist_dir, exist_ok=True)
         self.embeddings = embeddings
