@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from db import get_session
+from fastapi.responses import StreamingResponse
 from models import User, Domain, OrgDocument, UserDomainAccess, DocEmbedding
 from schemas import AskRequest, AskResponse
 from auth_dep import get_current_user
@@ -86,6 +87,7 @@ async def _semantic_search(
     allowed_domains: List[int],
     query: str,
     top_k: int = 6,
+    stream: bool=True
 ) -> Tuple[List[str], List[int]]:
     if not allowed_domains:
         return [], []
@@ -122,11 +124,15 @@ async def _semantic_search(
         
     rvm= EnsembleRetriever(retrievers=retrieval_list)
     docs_list=rvm.invoke(input=query)
+    if stream:
+    # answer=llm.generate_answer(context=docs_list,query=query)
+       answer=llm.generate_stream_answer(context=docs_list,query=query)
+    else :
+       answer=llm.generate_answer(context=docs_list,query=query)
+    # print("stream answer",stream_answer)
 
-    answer=llm.generate_answer(context=docs_list,query=query)
-
-
-    return answer.content,docs_list
+    return answer,docs_list
+    # return answer.content,docs_list
 
 
 # async def _semantic_search(
@@ -174,6 +180,44 @@ async def _semantic_search(
 
 # Main /ask endpoint
 import time
+@router.post("/ask-stream", response_model=AskResponse)
+async def ask_stream(
+    payload: AskRequest,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    # Org/suborg scope check
+    s=time.monotonic()
+    if user.org_id != payload.org_id:
+        raise HTTPException(status_code=403, detail="You cannot query another organization's data")
+    if (
+        user.suborg_id is not None
+        and user.suborg_id != payload.suborg_id
+        and (user.role or "").lower() != "org_admin"
+    ):
+        raise HTTPException(status_code=403, detail="You cannot query another suborg")
+
+    # Domain access
+    allowed = await _allowed_domain_ids(session, user, payload.org_id, payload.suborg_id)
+    print("allowed domain ids",allowed)
+    if not allowed:
+        raise HTTPException(status_code=403, detail="You have no domain access. Ask an admin to grant it.")
+     
+    # query search
+
+    answer ,doc_list= await _semantic_search(session, payload.org_id, payload.suborg_id, allowed, query=payload.query)
+
+    def generate(ans):
+        for item in ans:
+            yield str(item.content)
+
+    return StreamingResponse(generate(answer),media_type='application/json')
+    # print("time take for query",time.monotonic()-s)
+    # return {"response":answer}
+    # return AskResponse(allowed_domains_used=allowed, sources=sources, answer=answer)
+    # return AskResponse(allowed_domains_used=allowed, sources=doc_list, answer=answer)
+
+import time
 @router.post("/ask", response_model=AskResponse)
 async def ask(
     payload: AskRequest,
@@ -200,8 +244,10 @@ async def ask(
     # query search
 
     answer ,doc_list= await _semantic_search(session, payload.org_id, payload.suborg_id, allowed, query=payload.query)
-    
+
+
     print("time take for query",time.monotonic()-s)
+
     # return AskResponse(allowed_domains_used=allowed, sources=sources, answer=answer)
     return AskResponse(allowed_domains_used=allowed, sources=doc_list, answer=answer)
 
