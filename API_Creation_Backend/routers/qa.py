@@ -108,13 +108,13 @@ async def _semantic_search(
     
     if not rows:
         raise HTTPException(status_code=403, detail="You cannot query another suborg")
-    # print("allowed domain",allowed_domains[0])
-    docs_list=[]
+
+
     retrieval_list=[]
     for dom_id in allowed_domains:
 
         vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\\{org_id}\\dept\\{dom_id}")
-    # vectorStore.set_vector_store(docs=rows,embeddings=embeddings)
+       # vectorStore.set_vector_store(docs=rows,embeddings=embeddings)
         rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=10)
         retrieval_list.append(rv)
         # docs=rv.get_relevant_document(query=query)
@@ -122,7 +122,7 @@ async def _semantic_search(
         
     rvm= EnsembleRetriever(retrievers=retrieval_list)
     docs_list=rvm.invoke(input=query)
-    print("all docs list",docs_list)
+
     answer=llm.generate_answer(context=docs_list,query=query)
 
 

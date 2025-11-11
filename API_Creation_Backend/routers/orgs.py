@@ -4,8 +4,8 @@ from sqlalchemy import select
 from db import get_session
 from models import Organization, User
 from schemas import OrgCreate, OrgOut, OrgUpdate, OrgAdminOut
-from Rag.ai import embeddings ,loader,splitter,vectorStore,retriever,llm,BASE_DIR
-from Rag.FaissVectorstore import FaissVectorstore
+from Rag.ai import embeddings ,BASE_DIR
+# from Rag.FaissVectorstore import FaissVectorstore
 from Rag.VectorManager import vectorManager
 router = APIRouter(prefix="/orgs", tags=["organizations"])
 

@@ -4,7 +4,7 @@ from sqlalchemy import select
 from db import get_session
 from models import Organization, SubOrganization, Domain
 from schemas import DomainCreate, DomainOut, DomainUpdate
-from Rag.ai import embeddings ,loader,splitter,vectorStore,retriever,llm,BASE_DIR
+from Rag.ai import embeddings ,BASE_DIR
 from Rag.FaissVectorstore import FaissVectorstore
 #  this must exist for main.py to import
 from Rag.VectorManager import vectorManager
@@ -38,8 +38,6 @@ async def create_domain(payload: DomainCreate, session: AsyncSession = Depends(g
     await session.commit()
     await session.refresh(dom)
     vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\\{payload.org_id}\\dept\\{dom.domain_id}")
-    # dom_vector=FaissVectorstore(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{payload.org_id}/dept/{dom.domain_id}")
-    # dom_vector._load_or_create_store()
     return dom
 
 

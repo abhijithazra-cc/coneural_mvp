@@ -15,8 +15,8 @@ from routers.access import router as access_router
 from routers.qa import router as qa_router
 from Rag.FaissVectorstore import FaissVectorstore
 from Rag.ai import embeddings,BASE_DIR
-vectorStore=FaissVectorstore(embeddings=embeddings,persist_dir=BASE_DIR)
-vectorStore._load_or_create_store()
+# vectorStore=FaissVectorstore(embeddings=embeddings,persist_dir=BASE_DIR)
+# vectorStore._load_or_create_store()
 load_dotenv()
 # Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Org Document Portal")
@@ -44,11 +44,11 @@ app.include_router(access_router)
 app.include_router(qa_router)
 
 
-# @app.on_event("startup")
-# async def on_startup():
+@app.on_event("startup")
+async def on_startup():
     
-#     async with engine.begin() as conn:
-#         await conn.run_sync(Base.metadata.create_all)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
 @app.get("/health")

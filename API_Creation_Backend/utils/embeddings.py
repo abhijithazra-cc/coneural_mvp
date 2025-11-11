@@ -3,35 +3,8 @@ import os
 import math
 import hashlib
 from typing import List
-from Rag import *
-import os
-from Rag.ai import embeddings ,loader,splitter,vectorStore,retriever,llm
-# Optional OpenAI client
-try:
-    from openai import OpenAI
-except Exception:
-    OpenAI = None
 
-# Config
-_EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
-_api_key = os.getenv("OPENAI_API_KEY")
-
-_client = None
-if _api_key and OpenAI:
-    try:
-        _client = OpenAI(api_key=_api_key)
-    except Exception:
-        _client = None
-
-
-
-# Helpers
-
-def _l2norm(v: List[float]) -> List[float]:
-    n = math.sqrt(sum(x * x for x in v)) or 1.0
-    return [x / n for x in v]
-
-
+from Rag.ai import embeddings ,splitter
 
 # Embeddings
 
@@ -44,6 +17,43 @@ def generate_embedding(text:str) -> List[float]:
     """
     
     return embeddings.embed_query(text)
+
+
+# Chunking Text
+def chunk_text(docs, max_chars: int = 1200, overlap: int = 150):
+    chunks=splitter.split_documents(docs=docs,chunk_size=max_chars,chunk_overlap=overlap)
+    return chunks
+
+
+
+# Optional OpenAI client
+
+# try:
+#     from openai import OpenAI
+# except Exception:
+#     OpenAI = None
+
+# # Config
+# _EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
+# _api_key = os.getenv("OPENAI_API_KEY")
+
+# _client = None
+# if _api_key and OpenAI:
+#     try:
+#         _client = OpenAI(api_key=_api_key)
+#     except Exception:
+#         _client = None
+
+
+
+# Helpers
+
+# def _l2norm(v: List[float]) -> List[float]:
+#     n = math.sqrt(sum(x * x for x in v)) or 1.0
+#     return [x / n for x in v]
+
+
+
 # def generate_embedding(text: str) -> List[float]:
 #     """
 #     Generate an embedding for text.
@@ -72,16 +82,16 @@ def generate_embedding(text:str) -> List[float]:
 
 # Similarity
 
-def cosine(a: List[float], b: List[float]) -> float:
-    """
-    Cosine similarity between two vectors.
-    Returns 0.0 if vectors are empty.
-    """
-    if not a or not b:
-        return 0.0
-    sa = math.sqrt(sum(x * x for x in a)) or 1.0
-    sb = math.sqrt(sum(y * y for y in b)) or 1.0
-    return sum(x * y for x, y in zip(a, b)) / (sa * sb)
+# def cosine(a: List[float], b: List[float]) -> float:
+#     """
+#     Cosine similarity between two vectors.
+#     Returns 0.0 if vectors are empty.
+#     """
+#     if not a or not b:
+#         return 0.0
+#     sa = math.sqrt(sum(x * x for x in a)) or 1.0
+#     sb = math.sqrt(sum(y * y for y in b)) or 1.0
+#     return sum(x * y for x, y in zip(a, b)) / (sa * sb)
 
 
 
@@ -105,6 +115,3 @@ def cosine(a: List[float], b: List[float]) -> float:
 #     return parts[:100]  # safety cap
 
 
-def chunk_text(docs, max_chars: int = 1200, overlap: int = 150):
-    chunks=splitter.split_documents(docs=docs,chunk_size=max_chars,chunk_overlap=overlap)
-    return chunks
