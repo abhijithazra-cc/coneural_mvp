@@ -42,11 +42,12 @@ Assistant:"""
             return result
       def generate_stream_answer(self,context,query):
             import time
-            chain=self.get_prompt() | RunnableLambda(lambda x: self.get_llm().stream(x))
-
-            result=chain.invoke({"context":context,"query":query})
-            for res in result:
-                  print(res.content,end=' ')
+            chain=self.get_prompt() | self.get_llm()
+            # chain=self.get_prompt() | RunnableLambda(lambda x: self.get_llm().stream(x))
+            result=chain.stream({"context":context,"query":query})
+            # result=chain.invoke({"context":context,"query":query})
+            # for res in result:
+            #       print(res.content,end="",flush=True)
             # self.model_response=result
             return result
       def set_model_response(self,docs):
