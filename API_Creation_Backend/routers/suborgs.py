@@ -6,7 +6,7 @@ from sqlalchemy import select
 from db import get_session
 from models import Organization, SubOrganization, Domain, User
 from schemas import SuborgCreate, SuborgOut, SuborgUpdate, SuborgAdminOut
-from Rag.FaissVectorstore import FaissVectorstore
+# from Rag.FaissVectorstore import FaissVectorstore
 from Rag.ai import embeddings,BASE_DIR
 from Rag.VectorManager import vectorManager
 router = APIRouter(prefix="/suborgs", tags=["suborgs"])
@@ -60,7 +60,7 @@ async def create_suborg(payload: SuborgCreate, session: AsyncSession = Depends(g
         dom=Domain(org_id=payload.org_id, suborg_id=sub.suborg_id, name=name, description=desc)
         session.add(dom)
         await session.flush()
-        # print(dom.domain_id)
+
         vc=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{payload.org_id}\dept\{dom.domain_id}")
         # vc=FaissVectorstore(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{payload.org_id}/dept/{dom.domain_id}")
         # vc._load_or_create_store()

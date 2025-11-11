@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import HTTPException
 from Rag import *
 import os
-from Rag.ai import embeddings ,loader,splitter,vectorStore,retriever,llm
+from Rag.ai import loader
 from io import BytesIO
 def extract_full_text(pages_data):
     """
@@ -25,6 +25,9 @@ def extract_full_text(pages_data):
 
     return res
 
+
+# Extract Text from File
+
 def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str],base_path="assets") -> str:
     """
     Extracts text from common file types: PDF, DOCX, TXT.
@@ -37,12 +40,6 @@ def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str],base_
     # Build full path
     file_path = os.path.join(base_path, name)
     try:
-        # print("hi")
-        
-    #     os.makedirs(base_path, exist_ok=True)
-
-    # # Build full path
-    #     file_path = os.path.join(base_path, name)
 
     # Check if file exists
         if os.path.exists(file_path):
@@ -52,9 +49,9 @@ def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str],base_
         print("file path",file_path)
         loader.load_document(file_path)
         docs=loader.get_document()
-        # print(docs)
+  
         content=extract_full_text(docs)
-        # print("content",content)
+  
         return content,docs
     
     
@@ -62,6 +59,12 @@ def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str],base_
         if os.path.exists(file_path):
            raise HTTPException(detail=f"File '{name}' already exists in '{base_path}'",status_code=403)
         # return file_bytes.decode("utf-8", errors="ignore")
+
+
+
+
+# Extract Text from File
+
 # def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str]) -> str:
 #     """
 #     Extracts text from common file types: PDF, DOCX, TXT.
