@@ -5,7 +5,7 @@ from db import get_session
 from models import Organization, SubOrganization, Domain
 from schemas import DomainCreate, DomainOut, DomainUpdate
 from Rag.ai import embeddings ,BASE_DIR
-from Rag.FaissVectorstore import FaissVectorstore
+# from Rag.FaissVectorstore import FaissVectorstore
 #  this must exist for main.py to import
 from Rag.VectorManager import vectorManager
 router = APIRouter(prefix="/domains", tags=["domains"])
