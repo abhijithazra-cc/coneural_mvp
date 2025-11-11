@@ -6,6 +6,7 @@ from Rag import *
 import os
 from Rag.ai import loader
 from io import BytesIO
+from langchain_core.documents import Document
 def extract_full_text(pages_data):
     """
     Combine page_content from all pages into a single text string.
@@ -28,39 +29,94 @@ def extract_full_text(pages_data):
 
 # Extract Text from File
 
-def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str],base_path="assets") -> str:
+# def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str],base_path="assets") -> str:
+#     """
+#     Extracts text from common file types: PDF, DOCX, TXT.
+#     Falls back to UTF-8 decode if extractors fail.
+#     """
+#     name = (filename or "").lower()
+#     mt = (mimetype or "").lower()
+#     os.makedirs(base_path, exist_ok=True)
+
+#     # Build full path
+#     file_path = os.path.join(base_path, name)
+#     try:
+
+#     # Check if file exists
+#         if os.path.exists(file_path):
+#            raise HTTPException(detail=f"File '{name}' already exists in '{base_path}'",status_code=503)
+#         with open(file_path, "wb") as f:
+#              f.write(file_bytes)
+
+#         print("file path",file_path)
+#         loader.load_document(file_path)
+#         docs=loader.get_document()
+  
+#         content=extract_full_text(docs)
+  
+#         return content,docs
+    
+    
+#     except Exception:
+#         if os.path.exists(file_path):
+#            raise HTTPException(detail=f"File '{name}' already exists in '{base_path}'",status_code=403)
+#         # return file_bytes.decode("utf-8", errors="ignore")
+
+def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str]) -> str:
     """
     Extracts text from common file types: PDF, DOCX, TXT.
     Falls back to UTF-8 decode if extractors fail.
     """
     name = (filename or "").lower()
     mt = (mimetype or "").lower()
-    os.makedirs(base_path, exist_ok=True)
-
-    # Build full path
-    file_path = os.path.join(base_path, name)
+    docs=[]
     try:
+        # PDF
+        if name.endswith(".pdf") or "pdf" in mt:
+            try:
+                import fitz  # PyMuPDF (best)
+                from io import BytesIO
+                doc = fitz.open(stream=file_bytes, filetype="pdf")
+                
+                for i,p in enumerate(doc):
+                    docs.append(Document(page_content=p.get_text("text"),metadata={"pages":i+1,"filename":filename}))
+                text=extract_full_text(docs)
+                # print("docs",docs)
+                return text,docs
+                # return "\n".join(p.get_text("text") for p in doc) ,
+            except Exception:
+                try:
+                    from pypdf import PdfReader
+                    from io import BytesIO
+                    reader = PdfReader(BytesIO(file_bytes))
+                    for i,p in enumerate(reader.pages):
+                        docs.append(Document(page_content=p.extract_text(),metadata={"pages":i+1}))
+                    text=extract_full_text(docs)
+                    return text,docs
 
-    # Check if file exists
-        if os.path.exists(file_path):
-           raise HTTPException(detail=f"File '{name}' already exists in '{base_path}'",status_code=503)
-        with open(file_path, "wb") as f:
-             f.write(file_bytes)
-        print("file path",file_path)
-        loader.load_document(file_path)
-        docs=loader.get_document()
-  
-        content=extract_full_text(docs)
-  
-        return content,docs
-    
-    
+                    # return "\n".join((p.extract_text() or "") for p in reader.pages)
+                except Exception:
+                    pass
+
+        # DOCX
+        if name.endswith(".docx") or "officedocument.wordprocessingml.document" in mt:
+            try:
+                import docx
+                from io import BytesIO
+                d = docx.Document(BytesIO(file_bytes))
+                for i,p in enumerate(doc):
+                    docs.append(Document(page_content=p.get_text("text"),metadata={"pages":i+1,"filename":filename}))
+                text=extract_full_text(docs)
+                return text,docs
+                # return "\n".join(p.text for p in d.paragraphs)
+            except Exception:
+                pass
+
+        # Plain text-like
+        return file_bytes.decode("utf-8", errors="ignore")
+
     except Exception:
-        if os.path.exists(file_path):
-           raise HTTPException(detail=f"File '{name}' already exists in '{base_path}'",status_code=403)
-        # return file_bytes.decode("utf-8", errors="ignore")
-
-
+        return file_bytes.decode("utf-8", errors="ignore")
 
 
 # Extract Text from File
