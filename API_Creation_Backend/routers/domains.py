@@ -9,7 +9,8 @@ from Rag.ai import embeddings ,BASE_DIR
 #  this must exist for main.py to import
 from Rag.VectorManager import vectorManager
 router = APIRouter(prefix="/domains", tags=["domains"])
-
+import os
+import shutil
 
 @router.post("", response_model=DomainOut, status_code=201)
 async def create_domain(payload: DomainCreate, session: AsyncSession = Depends(get_session)):
@@ -98,4 +99,7 @@ async def delete_domain(
 
     await session.delete(dom)
     await session.commit()
-    return {"message": "Domain deleted"}
+    deptVectordb_path=f"{BASE_DIR}\\{org_id}\\dept\\{dom.domain_id}"
+    if os.path.exists(deptVectordb_path):
+        shutil.rmtree(deptVectordb_path,ignore_errors=True)
+    return {"message": "Domain deleted and corresponding document embeddings deleted"}

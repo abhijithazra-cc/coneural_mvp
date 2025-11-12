@@ -139,4 +139,6 @@ async def delete_org_document(doc_id: int, session: AsyncSession = Depends(get_s
         raise HTTPException(status_code=404, detail="Document not found")
     await session.delete(doc)
     await session.commit()
+    store= vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{doc.org_id}\dept\{doc.domain_id}")
+    store.delete_by_doc_id(doc_id=doc_id)
     return {"message": "Document deleted"}
