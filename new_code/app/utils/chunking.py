@@ -6,7 +6,7 @@ from typing import List
 from pypdf import PdfReader
 import docx  # python-docx
 
-
+from app.Rag.ai import embeddings ,splitter
 def extract_text_from_file(
     f: io.BytesIO,
     filename: str,
@@ -39,30 +39,35 @@ def extract_text_from_file(
         return data.decode("latin-1", errors="ignore")
 
 
-def chunk_text(text: str, max_tokens: int = 600, overlap: int = 120) -> List[str]:
-    """
-    Simple approximate chunking by characters.
-    For production, you can swap this out for a tokenizer-aware chunker.
-    """
-    if not text:
-        return []
+# def chunk_text(text: str, max_tokens: int = 600, overlap: int = 120) -> List[str]:
+#     """
+#     Simple approximate chunking by characters.
+#     For production, you can swap this out for a tokenizer-aware chunker.
+#     """
+#     if not text:
+#         return []
 
-    # Very rough char→token approximation
-    approx_chars_per_token = 4
-    max_chars = max_tokens * approx_chars_per_token
-    overlap_chars = overlap * approx_chars_per_token
+#     # Very rough char→token approximation
+#     approx_chars_per_token = 4
+#     max_chars = max_tokens * approx_chars_per_token
+#     overlap_chars = overlap * approx_chars_per_token
 
-    chunks = []
-    start = 0
-    length = len(text)
+#     chunks = []
+#     start = 0
+#     length = len(text)
 
-    while start < length:
-        end = min(start + max_chars, length)
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
-        if end >= length:
-            break
-        start = max(0, end - overlap_chars)
+#     while start < length:
+#         end = min(start + max_chars, length)
+#         chunk = text[start:end].strip()
+#         if chunk:
+#             chunks.append(chunk)
+#         if end >= length:
+#             break
+#         start = max(0, end - overlap_chars)
 
+#     return chunks
+
+
+def chunk_text(docs, max_tokens: int = 1200, overlap: int = 150):
+    chunks=splitter.split_documents(docs=docs,chunk_size=max_tokens,chunk_overlap=overlap)
     return chunks

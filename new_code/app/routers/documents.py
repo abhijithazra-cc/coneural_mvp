@@ -2,7 +2,7 @@
 
 import io
 from typing import Optional
-
+from app.Rag.VectorManager import vectorManager
 import numpy as np
 from fastapi import (
     APIRouter,
@@ -24,7 +24,9 @@ from app.services.auth import get_current_active_user
 from app.utils.chunking import extract_text_from_file, chunk_text
 from app.utils.embeddings import embed_texts
 from app.utils.faiss_manager import add_vectors
-
+from app.utils.text_extractors import extract_text
+from app.Rag.ai import embeddings,BASE_DIR
+from app.Rag.VectorManager import vectorManager
 router = APIRouter(prefix="/org-documents", tags=["org_documents"])
 
 # 5 MB limit as requested
@@ -118,16 +120,22 @@ async def upload_org_document(
 
     # 5) Extract text
     try:
-        text = extract_text_from_file(
-            io.BytesIO(payload),
+        # text = extract_text_from_file(
+        #     io.BytesIO(payload),
+        #     filename=file.filename,
+        #     mime_type=file.content_type or "",
+        # )
+        text,docs = extract_text(
+            payload,
             filename=file.filename,
-            mime_type=file.content_type or "",
+            mimetype=file.content_type or "",
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Cannot read file: {e}")
 
     # 6) Chunk text
-    chunks = chunk_text(text, max_tokens=600, overlap=120)
+    chunks = chunk_text(docs=docs, max_tokens=600, overlap=120)
+    print("chunks",chunks)
     if not chunks:
         raise HTTPException(status_code=400, detail="No text content in file")
 
@@ -143,7 +151,10 @@ async def upload_org_document(
     )
     db.add(doc)
     db.flush()  # doc.id becomes available
+    # await session.flush()  
 
+    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{org_id}\dept\{suborg_id}")
+    vectorStore.add_documents(documents=chunks,doc_id=doc.id)
     # 8) Persist chunks in SQL
     db.add_all(
         [
@@ -161,18 +172,18 @@ async def upload_org_document(
     db.refresh(doc)
 
     # 9) Embed & index (FAISS HNSW)
-    vectors = embed_texts(chunks)  # shape (N, D), float32
+    # vectors = embed_texts(chunks)  # shape (N, D), float32
 
-    if not isinstance(vectors, np.ndarray):
-        vectors = np.asarray(vectors, dtype="float32")
-    if vectors.dtype != np.float32:
-        vectors = vectors.astype("float32", copy=False)
+    # if not isinstance(vectors, np.ndarray):
+    #     vectors = np.asarray(vectors, dtype="float32")
+    # if vectors.dtype != np.float32:
+    #     vectors = vectors.astype("float32", copy=False)
 
-    # unique ids per chunk for this doc
-    ids = np.array(
-        [doc.id * 1_000_000 + i for i in range(len(chunks))], dtype="int64"
-    )
-    add_vectors(org_id=org_id, suborg_id=suborg_id, vectors=vectors, ids=ids)
+    # # unique ids per chunk for this doc
+    # ids = np.array(
+    #     [doc.id * 1_000_000 + i for i in range(len(chunks))], dtype="int64"
+    # )
+    # add_vectors(org_id=org_id, suborg_id=suborg_id, vectors=vectors, ids=ids)
 
     return {
         "doc": {

@@ -34,6 +34,7 @@ from app.routers.suborganizations import router as suborg_router  # /departments
 from app.routers.users import router as users_router          # /users
 from app.routers.documents import router as docs_router       # /org-documents
 from app.routers.access import router as access_router        # /access
+from app.routers.qa import router as qa_router
 
 # 🔹 Attach routers
 app.include_router(auth_router)
@@ -42,6 +43,7 @@ app.include_router(suborg_router)
 app.include_router(users_router)
 app.include_router(docs_router)
 app.include_router(access_router)
+app.include_router(qa_router)
 
 # 🔹 Health / root endpoints
 @app.get("/")
