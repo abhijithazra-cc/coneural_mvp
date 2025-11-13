@@ -2,6 +2,7 @@ from langchain_openai import ChatOpenAI
 import os
 from langchain_core.runnables import RunnablePassthrough,RunnableLambda
 from langchain_core.prompts import PromptTemplate
+# from langchain_text_splitters.nltk import NLTKTextSplitter
 # Initialize the OpenAI language model for response generation
 
 class OpenaiModel():
@@ -25,6 +26,7 @@ Your rules are:
 5. When citing or explaining, refer only to what is in the chunks.
 6. Maintain factual accuracy strictly bound to the given chunks.
 7. Be concise and formal.
+8. Answer should not look like gpt generated
 <context>
 {context}
 </context>
