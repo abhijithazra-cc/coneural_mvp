@@ -1,2 +1,4 @@
 *.env
 *.pyc
+.API_Creation_Backend
+.Rag
