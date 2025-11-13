@@ -7,7 +7,8 @@ from app.models.user_model import User as UserModel
 from app.services.auth import get_current_active_user
 from app.schemas.suborganization_schema import SuborganizationCreate, SuborganizationUpdate
 from app.database import get_db
-
+from app.Rag.VectorManager import vectorManager
+from app.Rag.ai import embeddings,BASE_DIR
 router = APIRouter(prefix="/suborganizations", tags=["suborganizations"])
 
 def _sub_public(s: SuborganizationModel) -> dict:
@@ -24,7 +25,10 @@ def create_suborganization(suborganization: SuborganizationCreate, db: Session =
         ).first()
         if dup: raise HTTPException(status_code=400, detail="Suborganization name already exists in this organization")
         s = SuborganizationModel(name=suborganization.name, description=suborganization.description, organization_id=suborganization.organization_id)
+
         db.add(s); db.commit(); db.refresh(s)
+        db.flush()
+        vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\\{suborganization.organization_id}\\dept\\{s.id}")
         return _sub_public(s)
     except HTTPException:
         raise
