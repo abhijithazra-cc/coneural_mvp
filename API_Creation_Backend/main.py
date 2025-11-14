@@ -13,8 +13,8 @@ from routers.domains import router as domain_router
 from routers.org_documents import router as doc_router
 from routers.access import router as access_router
 from routers.qa import router as qa_router
-from Rag.FaissVectorstore import FaissVectorstore
-from Rag.ai import embeddings,BASE_DIR
+from Rag.vector_stores.FaissVectorstore import FaissVectorstore
+from Rag.utils import embeddings,BASE_DIR
 # vectorStore=FaissVectorstore(embeddings=embeddings,persist_dir=BASE_DIR)
 # vectorStore._load_or_create_store()
 load_dotenv()

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from db import get_session
 from models import OrgDocument, Organization, SubOrganization, Domain, User, DocEmbedding
 from schemas import OrgDocumentOut
-from Rag.ai import embeddings,BASE_DIR
+from Rag.utils import embeddings,BASE_DIR
 #  Import shared utils
 from utils.text_extractors import extract_text
 from utils.embeddings import chunk_text, generate_embedding

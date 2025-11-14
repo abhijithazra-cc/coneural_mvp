@@ -4,7 +4,7 @@ import math
 import hashlib
 from typing import List
 
-from Rag.ai import embeddings ,splitter
+from Rag.utils import embeddings ,splitter
 
 # Embeddings
 

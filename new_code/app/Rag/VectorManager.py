@@ -1,8 +1,9 @@
 import os
 import threading
 from typing import Dict
-from app.Rag.FaissVectorstore import FaissVectorstore  # your class
-from app.Rag.ai import BASE_DIR,embeddings
+from app.Rag.abstractions.IVectorstore import IVectorstore
+from app.Rag.vector_stores.FaissVectorstore import FaissVectorstore  # your class
+from app.Rag.utils import BASE_DIR,embeddings
 class VectorManager:
     """
     Singleton registry that stores and manages multiple FaissVectorstore objects.
@@ -18,7 +19,7 @@ class VectorManager:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = super(VectorManager, cls).__new__(cls)
-                    cls._instance._stores: Dict[str, FaissVectorstore] = {}
+                    cls._instance._stores: Dict[str, IVectorstore] = {}
         return cls._instance
 
     def __init__(self, base_dir: str = BASE_DIR):
@@ -45,9 +46,14 @@ class VectorManager:
             except Exception as e:
                 print(f"⚠️ Failed to load store at {path}: {e}")
 
-
+    def create_store(self,embeddings,persist_dir:str)-> IVectorstore:
+        print(f"🆕 Creating new FAISS vector store at: {persist_dir}")
+        os.makedirs(persist_dir, exist_ok=True)
+        vstore = FaissVectorstore(embeddings=embeddings, persist_dir=persist_dir)
+        vstore._load_or_create_store()
+        self._stores[persist_dir] = vstore
     # --------------------------------------------------------------------------
-    def get_store(self, embeddings, persist_dir: str) -> FaissVectorstore:
+    def get_store(self, embeddings, persist_dir: str) -> IVectorstore:
         """Return an existing or newly created FAISS vector store."""
         # Normalize path
         # if not os.path.isabs(persist_dir):

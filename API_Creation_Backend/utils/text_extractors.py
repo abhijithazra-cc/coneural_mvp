@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import HTTPException
 from Rag import *
 import os
-from Rag.ai import loader
+from Rag.utils import loader
 from io import BytesIO
 from langchain_core.documents import Document
 def extract_full_text(pages_data):

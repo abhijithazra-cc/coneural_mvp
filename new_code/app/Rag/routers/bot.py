@@ -6,26 +6,23 @@ from fastapi import FastAPI,File, UploadFile,Query
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import sys, os
-from PdfLoader import PdfLoader
+from app.Rag.document_loaders.PdfLoader import PdfLoader
 from langchain_openai.embeddings import OpenAIEmbeddings
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from TxtLoader import TxtLoader
-from CharacterSplitter import CharacterSplitter
-from FaissVectorstore import FaissVectorstore
-from Retriever import Retriever
-from OpenaiModel import OpenaiModel
+from app.Rag.document_loaders.TxtLoader import TxtLoader
+from app.Rag.text_splitters.CharacterSplitter import CharacterSplitter
+from app.Rag.vector_stores.FaissVectorstore import FaissVectorstore
+from app.Rag.Retriever import Retriever
+from app.Rag.OpenaiModel import OpenaiModel
 import time
 load_dotenv()
 router = APIRouter(prefix="/bot", tags=["ChatBot"])
 
 embeddings=OpenAIEmbeddings(api_key=os.getenv('OPENAI_API_KEY'),model='text-embedding-3-small')
-# from langchain_community.document_loaders import TextLoader
-# loader=TextLoader("sample.txt")
-# documents=loader.load()
-# loader=TxtLoader()
+
 loader=PdfLoader()
 splitter=CharacterSplitter()
-vectorStore=FaissVectorstore()
+vectorStore=FaissVectorstore(embeddings=embeddings)
 retriever=Retriever()
 llm=OpenaiModel()
 
@@ -43,8 +40,9 @@ async def get_relevant_documents_chunks(query:str="",search_type="similarity",to
     emd=embeddings.embed_query(query)
     print(emd)
     print("*****",type(emd),"*****")
-    retriever.set_retreiver(vector_store=vectorStore.get_vector_store(),search_type=search_type,top_n=top_n_chunks)
-    docs=retriever.get_relevant_document(query=query)
+    rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type=search_type,top_n=top_n_chunks)
+    
+    docs=rv.get_relevant_document(query=query)
     docs=llm.generate_answer(context=docs,query=query)
     e=time.monotonic()
     return {"response":docs,"processing_time":e-s}
@@ -108,12 +106,14 @@ async def upload_file(file: UploadFile = File(...)):
     content = await file.read()
     
     # Optionally, save it to disk
-    with open(f"{file.filename}", "wb") as f:
-        f.write(content)
-    file_path=os.path.abspath(file.filename)
-    
-    loader.load_document(file_path)
-    chuncks=splitter.split_documents(docs=loader.get_document(),chunk_size=1000,chunk_overlap=100)
+    # with open(f"{file.filename}", "wb") as f:
+    #     f.write(content)
+    # file_path=os.path.abspath(file.filename)
+    loader.load_document(file=content,filename=file.filename)
+    docs=loader.get_document()
+    print(docs)
+    # loader.load_document(file_path)
+    chuncks=splitter.split_documents(docs=docs,chunk_size=1000,chunk_overlap=100)
     vectorStore.set_vector_store(chuncks,embeddings=embeddings)
     e=time.monotonic()
 
