@@ -4,21 +4,21 @@ from fastapi import FastAPI,File, UploadFile,Query
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import sys, os
-from PdfLoader import PdfLoader
+from Rag.document_loaders.PdfLoader import PdfLoader
 from langchain_openai.embeddings import OpenAIEmbeddings
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from TxtLoader import TxtLoader
-from CharacterSplitter import CharacterSplitter
-from FaissVectorstore import FaissVectorstore
-from Retriever import Retriever
-from OpenaiModel import OpenaiModel
+# from TxtLoader import TxtLoader
+# from CharacterSplitter import CharacterSplitter
+# from FaissVectorstore import FaissVectorstore
+# from Retriever import Retriever
+# from OpenaiModel import OpenaiModel
 import time
-import routers
-from routers.bot import router as bot_router
+import Rag.routers
+from Rag.routers.bot import router as bot_router
 # from SemanticSplitter import SemanticSplitter
 
 
-app = FastAPI(title="app.Rag Implementation using Langchain")
+app = FastAPI(title="Rag Implementation using Langchain")
 
 #  CORS setup
 origins = [o.strip() for o in (os.getenv("ALLOWED_ORIGINS") or "").split(",") if o.strip()] \

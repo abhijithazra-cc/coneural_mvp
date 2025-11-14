@@ -1,4 +1,4 @@
-from abstractions.Idocloader import Idocloader
+from Rag.abstractions.Idocloader import Idocloader
 from langchain_community.document_loaders import TextLoader
 class TxtLoader(Idocloader):
      def __init__(self):

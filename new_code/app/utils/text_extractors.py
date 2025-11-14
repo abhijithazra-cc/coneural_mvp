@@ -29,9 +29,11 @@ from typing import Optional
 from fastapi import HTTPException
 # from Rag import *
 import os
-from app.Rag.ai import loader
+# from app.Rag.utils import loader
 from io import BytesIO
 from langchain_core.documents import Document
+from app.Rag.document_loaders.PdfLoader import PdfLoader
+from app.Rag.document_loaders.DocLoader import DocLoader
 def extract_full_text(pages_data):
     """
     Combine page_content from all pages into a single text string.
@@ -64,41 +66,22 @@ def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str]) -> s
         # PDF
         if name.endswith(".pdf") or "pdf" in mt:
             try:
-                import fitz  # PyMuPDF (best)
-                from io import BytesIO
-                doc = fitz.open(stream=file_bytes, filetype="pdf")
-                
-                for i,p in enumerate(doc):
-                    docs.append(Document(page_content=p.get_text("text"),metadata={"pages":i+1,"filename":filename}))
-                text=extract_full_text(docs)
-                # print("docs",docs)
+                loader=PdfLoader()
+                loader.load_document(file=file_bytes,filename=filename)
+                docs=loader.get_document()
+                text=loader.get_full_content()
                 return text,docs
-                # return "\n".join(p.get_text("text") for p in doc) ,
             except Exception:
-                try:
-                    from pypdf import PdfReader
-                    from io import BytesIO
-                    reader = PdfReader(BytesIO(file_bytes))
-                    for i,p in enumerate(reader.pages):
-                        docs.append(Document(page_content=p.extract_text(),metadata={"pages":i+1}))
-                    text=extract_full_text(docs)
-                    return text,docs
-
-                    # return "\n".join((p.extract_text() or "") for p in reader.pages)
-                except Exception:
                     pass
 
         # DOCX
-        if name.endswith(".docx") or "officedocument.wordprocessingml.document" in mt:
+        elif name.endswith(".docx") or "officedocument.wordprocessingml.document" in mt:
             try:
-                import docx
-                from io import BytesIO
-                d = docx.Document(BytesIO(file_bytes))
-                for i,p in enumerate(doc):
-                    docs.append(Document(page_content=p.get_text("text"),metadata={"pages":i+1,"filename":filename}))
-                text=extract_full_text(docs)
+                loader=DocLoader()
+                loader.load_document(file=file_bytes,filename=filename)
+                docs=loader.get_document()
+                text=loader.get_full_content()
                 return text,docs
-                # return "\n".join(p.text for p in d.paragraphs)
             except Exception:
                 pass
 

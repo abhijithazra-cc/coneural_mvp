@@ -1,6 +1,6 @@
-from abstractions.IVectorstore import IVectorstore
+from app.Rag.abstractions.IVectorstore import IVectorstore
 from langchain_community.vectorstores import FAISS
-import os,uuid
+import os
 
 class FaissVectorstore(IVectorstore):
      # def __init__(self):
@@ -16,7 +16,7 @@ class FaissVectorstore(IVectorstore):
      #    #   val._get_relevant_documents()
      # def get_vector_store(self):
      #      return self.vectorstore
-    def __init__(self,embeddings,persist_dir="vectorstores/org"):
+    def __init__(self,embeddings,persist_dir="vectorstores\org"):
         self.persist_dir = persist_dir
         os.makedirs(persist_dir, exist_ok=True)
         self.embeddings = embeddings
@@ -39,20 +39,20 @@ class FaissVectorstore(IVectorstore):
         return self.vectorstore
     def set_vector_store(self,docs, embeddings):
         self.vectorstore= self._load_or_create_store()
-        return self.vectorstore
+        
     def get_vector_store(self):
         return self.vectorstore
     # ---------- Add documents ----------
-    def add_documents(self, docs,doc_id):
+    def add_documents(self, documents,doc_id):
             store = self._load_or_create_store()
             # assign doc_id metadata for deletion tracking
-            # doc_id = str(uuid.uuid4())
-            for c in docs:
+          #   doc_id = str(uuid.uuid4())
+            for c in documents:
                 c.metadata["doc_id"] = doc_id
             self.doc_id_list.append(doc_id)
 
-            store.add_documents(docs)
-            print(f"✅ Added {len(docs)} chunks (doc_id={doc_id})")
+            store.add_documents(documents=documents)
+            print(f"✅ Added {len(documents)} chunks (doc_id={doc_id})")
 
             store.save_local(self.persist_dir)
             self.vectorstore = store
@@ -68,7 +68,7 @@ class FaissVectorstore(IVectorstore):
         return docs
 
     # ---------- Delete document + its chunks ----------
-    def delete_by_doc_id(self, doc_id: str):
+    def delete_document_by_id(self, doc_id: str):
         store = self._load_or_create_store()
         # find matching IDs in FAISS index
         ids_to_delete = [

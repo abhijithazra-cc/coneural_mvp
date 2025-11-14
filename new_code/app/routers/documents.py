@@ -22,10 +22,11 @@ from app.models.suborganization_model import Suborganization
 from app.models.access_model import UserDomainAccess
 from app.services.auth import get_current_active_user
 from app.utils.chunking import extract_text_from_file, chunk_text
+# from app.Rag.text_splitters.CharacterSplitter import CharacterSplitter
 from app.utils.embeddings import embed_texts
 from app.utils.faiss_manager import add_vectors
 from app.utils.text_extractors import extract_text
-from app.Rag.ai import embeddings,BASE_DIR
+from app.Rag.utils import embeddings,BASE_DIR
 from app.Rag.VectorManager import vectorManager
 router = APIRouter(prefix="/org-documents", tags=["org_documents"])
 
@@ -134,6 +135,7 @@ async def upload_org_document(
         raise HTTPException(status_code=400, detail=f"Cannot read file: {e}")
 
     # 6) Chunk text
+
     chunks = chunk_text(docs=docs, max_tokens=600, overlap=120)
     print("chunks",chunks)
     if not chunks:

@@ -7,7 +7,7 @@ from db import get_session
 from models import Organization, SubOrganization, Domain, User
 from schemas import SuborgCreate, SuborgOut, SuborgUpdate, SuborgAdminOut
 # from Rag.FaissVectorstore import FaissVectorstore
-from Rag.ai import embeddings,BASE_DIR
+from Rag.utils import embeddings,BASE_DIR
 from Rag.VectorManager import vectorManager
 router = APIRouter(prefix="/suborgs", tags=["suborgs"])
 

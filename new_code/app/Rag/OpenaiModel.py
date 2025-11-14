@@ -2,7 +2,6 @@ from langchain_openai import ChatOpenAI
 import os
 from langchain_core.runnables import RunnablePassthrough,RunnableLambda
 from langchain_core.prompts import PromptTemplate
-# from langchain_text_splitters.nltk import NLTKTextSplitter
 # Initialize the OpenAI language model for response generation
 
 class OpenaiModel():
@@ -12,21 +11,9 @@ class OpenaiModel():
             self.model_response=None
       def get_prompt(self):
             PROMPT_TEMPLATE = """
-You are a Retrieval-Augmented Generation (RAG) assistant.
-
-You are provided with the following context chunks extracted from one or more documents.
-Use ONLY this context to answer the user's question.
-
-Your rules are:
-1. **Do not generate or infer** any information not explicitly present in the provided context.
-2. **If the context does not contain an answer**, reply exactly with:
-   "The answer is not available in the provided context."
-3. Never use prior knowledge or external facts.
-4. Do not make assumptions, guesses, or creative elaborations.
-5. When citing or explaining, refer only to what is in the chunks.
-6. Maintain factual accuracy strictly bound to the given chunks.
-7. Be concise and formal.
-8. Answer should not look like gpt generated
+Human: You are an AI assistant, and provides answers to questions by using fact based and statistical information when possible.
+Use the following pieces of information to provide a concise answer to the question enclosed in <question> tags.
+If you don't know the answer, just say that you don't know, don't try to make up an answer.
 <context>
 {context}
 </context>

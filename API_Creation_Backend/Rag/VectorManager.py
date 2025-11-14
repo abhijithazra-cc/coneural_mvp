@@ -1,8 +1,8 @@
 import os
 import threading
 from typing import Dict
-from Rag.FaissVectorstore import FaissVectorstore  # your class
-from Rag.ai import BASE_DIR,embeddings
+from Rag.vector_stores.FaissVectorstore import FaissVectorstore  # your class
+from Rag.utils import BASE_DIR,embeddings
 class VectorManager:
     """
     Singleton registry that stores and manages multiple FaissVectorstore objects.

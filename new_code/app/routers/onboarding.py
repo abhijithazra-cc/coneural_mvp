@@ -16,7 +16,8 @@ from app.schemas.onboarding_schema import (
     SignupRequest, SignupResponse, OrgProfileUpdate,
     DepartmentBulkCreate, InviteUsersRequest, InviteUsersResponse, RoleEnum
 )
-
+from app.Rag.VectorManager import vectorManager
+from app.Rag.utils import embeddings,BASE_DIR
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
 def _org_public(o: OrganizationModel) -> Dict:
@@ -50,7 +51,8 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
         hashed_password=hashed, user_type=UserType.ADMIN, organization_id=org.id
     )
     db.add(admin); db.commit(); db.refresh(admin)
-
+    db.flush()
+    vectorManager.create_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{org.id}")
     # JWT
     token = create_access_token(data={"sub": admin.email}, expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
 
@@ -103,7 +105,9 @@ def bulk_create_departments(
         ).first()
         if not sub:
             sub = SuborganizationModel(organization_id=body.organization_id, name=name_norm, description=name_norm)
-            db.add(sub); db.flush()
+            db.add(sub)
+        db.flush()
+        vectorManager.create_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{sub.organization_id}\dept\{sub.id}")
         created_or_existing.append(sub)
     db.commit()
     return [_sub_public(s) for s in created_or_existing]

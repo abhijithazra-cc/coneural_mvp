@@ -1,0 +1,7 @@
+from langchain_openai.embeddings import OpenAIEmbeddings
+from Rag.OpenaiModel import OpenaiModel
+import os
+
+BASE_DIR="vectorstores\org"
+embeddings=OpenAIEmbeddings(api_key=os.getenv('OPENAI_API_KEY'),model='text-embedding-3-small')
+llm=OpenaiModel()

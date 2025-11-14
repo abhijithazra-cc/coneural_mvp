@@ -17,7 +17,7 @@ from app.models.org_document_model import OrgDocument       # ✅ from org_docum
 from app.utils.embeddings import embed_texts
 from fastapi.responses import StreamingResponse
 # from app.utils.faiss_manager import FaissManager
-from app.Rag.ai import embeddings ,loader,splitter,retriever,llm,BASE_DIR
+from app.Rag.utils import embeddings,llm,BASE_DIR,retriever
 from app.Rag.VectorManager import vectorManager
 from langchain_classic.retrievers.ensemble import EnsembleRetriever
 from typing import Dict, List

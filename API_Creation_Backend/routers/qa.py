@@ -10,7 +10,7 @@ from models import User, Domain, OrgDocument, UserDomainAccess, DocEmbedding
 from schemas import AskRequest, AskResponse
 from auth_dep import get_current_user
 # from utils.embeddings import generate_embedding, cosine
-from Rag.ai import embeddings ,loader,splitter,retriever,llm,BASE_DIR
+from Rag.utils import embeddings ,loader,splitter,retriever,llm,BASE_DIR
 from Rag.VectorManager import vectorManager
 from langchain_classic.retrievers.ensemble import EnsembleRetriever
 

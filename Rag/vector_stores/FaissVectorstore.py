@@ -1,4 +1,4 @@
-from app.Rag.abstractions.IVectorstore import IVectorstore
+from Rag.abstractions.IVectorstore import IVectorstore
 from langchain_community.vectorstores import FAISS
 import os
 
@@ -39,7 +39,7 @@ class FaissVectorstore(IVectorstore):
         return self.vectorstore
     def set_vector_store(self,docs, embeddings):
         self.vectorstore= self._load_or_create_store()
-        return self.vectorstore
+        
     def get_vector_store(self):
         return self.vectorstore
     # ---------- Add documents ----------
@@ -68,7 +68,7 @@ class FaissVectorstore(IVectorstore):
         return docs
 
     # ---------- Delete document + its chunks ----------
-    def delete_by_doc_id(self, doc_id: str):
+    def delete_document_by_id(self, doc_id: str):
         store = self._load_or_create_store()
         # find matching IDs in FAISS index
         ids_to_delete = [

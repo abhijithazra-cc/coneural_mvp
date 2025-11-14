@@ -7,7 +7,7 @@ from app.services.auth import get_current_active_user
 from app.schemas.organization_schema import OrganizationCreate, OrganizationUpdate
 from app.database import get_db
 from app.Rag.VectorManager import vectorManager
-from app.Rag.ai import embeddings,BASE_DIR 
+from app.Rag.utils import embeddings,BASE_DIR 
 router = APIRouter(prefix="/organizations", tags=["organizations"],
     responses={400: {"description": "Bad Request"}, 401: {"description": "Unauthorized"},
                404: {"description": "Not Found"}, 500: {"description": "Internal Server Error"}})
@@ -29,7 +29,7 @@ def create_organization(
         db.add(org); db.commit(); db.refresh(org)
         db.flush()
         print("org_id",org.id)
-        org_vector=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{org.id}")
+        vectorManager.create_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{org.id}")
         return _org_public(org)
     except HTTPException:
         raise

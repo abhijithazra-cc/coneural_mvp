@@ -300,7 +300,7 @@ from app.services.auth import (
 )
 
 from app.Rag.VectorManager import vectorManager
-from app.Rag.ai import embeddings,BASE_DIR 
+from app.Rag.utils import embeddings,BASE_DIR 
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])

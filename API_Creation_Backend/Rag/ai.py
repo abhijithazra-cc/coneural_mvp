@@ -7,12 +7,12 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import sys, os
 
-from Rag.PdfLoader import PdfLoader
+from Rag.document_loaders.PdfLoader import PdfLoader
 from langchain_openai.embeddings import OpenAIEmbeddings
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from Rag.TxtLoader import TxtLoader
-from Rag.CharacterSplitter import CharacterSplitter
-from Rag.FaissVectorstore import FaissVectorstore
+from Rag.document_loaders.TxtLoader import TxtLoader
+from Rag.text_splitters.CharacterSplitter import CharacterSplitter
+from Rag.vector_stores.FaissVectorstore import FaissVectorstore
 from Rag.Retriever import Retriever
 from Rag.OpenaiModel import OpenaiModel
 import time
