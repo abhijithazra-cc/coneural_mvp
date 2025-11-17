@@ -6,7 +6,7 @@ from app.schemas.request_schema import AskRequest
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 import os
-
+from pydantic import BaseModel,Field
 from app.database import get_db
 from app.services.auth import get_current_active_user
 from app.models.user_model import User as UserModel, UserType
@@ -21,6 +21,7 @@ from app.Rag.utils import embeddings,llm,BASE_DIR,retriever
 from app.Rag.VectorManager import vectorManager
 from langchain_classic.retrievers.ensemble import EnsembleRetriever
 from typing import Dict, List
+from langchain_classic.text_splitter import CharacterTextSplitter
 router = APIRouter(prefix="/qa", tags=["qa"])
 # _faiss = FaissManager(dim=get_embed_dim())
 
@@ -89,6 +90,18 @@ def list_user_access(
 #     current_user: UserModel = Depends(get_current_active_user),
 #     stream:bool=False
 # ):
+
+
+class Answer(BaseModel):
+      content:str = Field(...,description="response from llm")
+      citation:str = Field(...,description="source of generated answer file path or name")
+
+
+class AnswerOutput(BaseModel):
+      response1:Answer=Field(...,description="first type of reponse from llm")
+      response2:Answer=Field(...,description="second type of response from llm")
+
+
 @router.post("/ask", summary="Ask a question over allowed departments")
 def ask(
     data:AskRequest,
@@ -124,13 +137,16 @@ def ask(
        return StreamingResponse(generate(answer),media_type='application/json')
 
     else :
-       answer=llm.generate_answer(context=docs_list,query=data.q)
-       return {
-        "answer": answer.content,
-        "snippets": docs_list,
-       }
+       answer = llm.generate_answer_with_structure(context=docs_list,query=data.q,schema=AnswerOutput)
+    #    answer=llm.generate_answer(context=docs_list,query=data.q)
+    #    return {
+    #     "answer": answer.content,
+    #     "sources": docs_list,
+    #    }
+       return answer
 
     # print("stream answer",stream_answer)
+
 
     # return answer,docs_list
 

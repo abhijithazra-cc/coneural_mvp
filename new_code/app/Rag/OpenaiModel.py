@@ -3,6 +3,7 @@ import os
 from langchain_core.runnables import RunnablePassthrough,RunnableLambda
 from langchain_core.prompts import PromptTemplate
 # Initialize the OpenAI language model for response generation
+from pydantic import BaseModel
 
 class OpenaiModel():
       def __init__(self):
@@ -11,9 +12,59 @@ class OpenaiModel():
             self.model_response=None
       def get_prompt(self):
             PROMPT_TEMPLATE = """
-Human: You are an AI assistant, and provides answers to questions by using fact based and statistical information when possible.
-Use the following pieces of information to provide a concise answer to the question enclosed in <question> tags.
-If you don't know the answer, just say that you don't know, don't try to make up an answer.
+SYSTEM PROMPT:
+
+You are a Retrieval-Augmented Generation (RAG) assistant.
+
+You are provided with the following context chunks extracted from one or more documents.
+Use ONLY this context to answer the user's question.
+
+Your rules are:
+1. **Do not generate or infer** any information not explicitly present in the provided context.
+2. **If the context does not contain an answer**, reply exactly with:
+   "The answer is not available in the provided context."
+3. Never use prior knowledge or external facts.
+4. Do not make assumptions, guesses, or creative elaborations.
+5. When citing or explaining, refer only to what is in the chunks.
+6. Maintain factual accuracy strictly bound to the given chunks.
+7. Be concise and formal.
+8. Answer should not look like gpt generated
+
+The response should be specific and use statistics or numbers when possible.
+
+IMPORTANT NOTE:
+
+Always answer every user query in TWO different styles.
+
+1) Response A — Short & Direct
+   - 3 to 6 lines
+   - Straight to the point
+   - Actionable
+   - No unnecessary explanation
+
+2) Response B — Detailed & Expanded
+   - Full explanation
+   - Step-by-step reasoning
+   - Examples
+   - Best practices
+   - Edge cases if relevant
+
+RULES:
+- Always output both Response A and Response B for every user query.
+- Label them exactly as:
+  "Response A (Short):"
+  "Response B (Detailed):"
+- Do NOT ask which one the user prefers. Always generate both.
+- Both responses must answer the same question but with different depth.
+
+OUTPUT FORMAT:
+
+Response A (Short):
+[short answer]
+
+Response B (Detailed):
+[detailed answer]
+
 <context>
 {context}
 </context>
@@ -36,6 +87,13 @@ Assistant:"""
       
       def generate_answer(self,context,query):
             chain=self.get_prompt() | self.get_llm()
+
+            result=chain.invoke({"context":context,"query":query})
+            self.model_response=result
+            return result
+      def generate_answer_with_structure(self,context,query,schema:BaseModel):
+            chain=self.get_prompt() | self.get_llm().with_structured_output(schema=schema)
+            # chain=self.get_prompt() | self.get_llm()
 
             result=chain.invoke({"context":context,"query":query})
             self.model_response=result

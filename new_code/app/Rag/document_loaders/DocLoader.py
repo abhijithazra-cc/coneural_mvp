@@ -10,7 +10,7 @@ class DocLoader(Idocloader):
      def __init__(self):
           self.documents=None
 
-     def load_document(self,file:str | bytes,filename:str):
+     def load_document(self,file:str | bytes,filename:str,id=None):
                 
                 if type(file)==str:
                     print("file type","str")
@@ -26,9 +26,10 @@ class DocLoader(Idocloader):
                     docs=[]
                     doc = docx.Document(file)
                     for i,p in enumerate(doc):
-                        docs.append(Document(page_content=p.get_text("text"),metadata={"pages":i+1,"filename":filename}))
+                        docs.append(Document(page_content=p.get_text("text"),id=id,metadata={"pages":i+1,"filename":filename}))
 
                     self.documents=docs
+                    print("my docs",docs)
 
      def get_document(self):
           return self.documents
