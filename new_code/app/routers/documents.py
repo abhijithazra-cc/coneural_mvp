@@ -130,14 +130,16 @@ async def upload_org_document(
             payload,
             filename=file.filename,
             mimetype=file.content_type or "",
+            
         )
+        
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Cannot read file: {e}")
 
     # 6) Chunk text
 
     chunks = chunk_text(docs=docs, max_tokens=600, overlap=120)
-    print("chunks",chunks)
+    # print("chunks",chunks)
     if not chunks:
         raise HTTPException(status_code=400, detail="No text content in file")
 

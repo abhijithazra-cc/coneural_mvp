@@ -51,7 +51,7 @@ class FaissVectorstore(IVectorstore):
                 c.metadata["doc_id"] = doc_id
             self.doc_id_list.append(doc_id)
 
-            store.add_documents(documents=documents)
+            store.add_documents(documents=documents,id=[doc_id])
             print(f"✅ Added {len(documents)} chunks (doc_id={doc_id})")
 
             store.save_local(self.persist_dir)
