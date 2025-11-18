@@ -200,7 +200,34 @@ async def upload_org_document(
         "department": {"org_id": org_id, "suborg_id": suborg_id},
     }
 
+@router.delete(
+    "/{doc_id}",
+    summary="Delete document (and its chunks)",
+)
+def delete_org_document(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current: UserModel = Depends(get_current_active_user),
+):
+    doc = db.query(OrgDocument).filter(OrgDocument.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
 
+    # Only org admin of that org can delete
+    if current.user_type != UserType.ADMIN or current.organization_id != doc.org_id:
+        raise HTTPException(status_code=403, detail="Only org admin can delete documents")
+
+    # Deleting doc will cascade to chunks (because of FK ondelete="CASCADE" if set)
+    db.delete(doc)
+    db.commit()
+    
+    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{current.organization_id}\dept\{doc.suborg_id}")
+    vectorStore.delete_document_by_id(doc_id=doc_id)
+    # vectorManager.load_store(persist_dir=f"{BASE_DIR}\{current.organization_id}\dept\{doc.suborg_id}")
+    # NOTE: We are not removing from FAISS index here; next time you rebuild index
+    # you would re-add remaining chunks. Implementing FAISS delete is possible but
+    # more complex; for now this keeps DB clean and doesn't affect uploads.
+    return {"message": "Document deleted successfully"}
 
 
 # # app/routers/documents.py

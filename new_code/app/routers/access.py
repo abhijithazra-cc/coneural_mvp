@@ -373,6 +373,20 @@ def list_user_access(
 
 # ─────────────────────────── Grant / Revoke ───────────────────────────
 
+
+
+# @router.post(
+#     "/aasign_dept_head",
+#     status_code=status.HTTP_200_OK,
+#     summary="Grant/Update user access for a department (suborganization)",
+# )
+# def grant_access(
+#     payload: AccessGrant,
+#     db: Session = Depends(get_db),
+#     current_user: UserModel = Depends(get_current_active_user),
+# ):
+
+
 @router.post(
     "/grant",
     status_code=status.HTTP_200_OK,
@@ -468,6 +482,7 @@ def revoke_access(
 
 
 # ───────────────────── Promote/Demote Author (department-level) ─────────────────────
+
 
 @router.post(
     "/promote/author",

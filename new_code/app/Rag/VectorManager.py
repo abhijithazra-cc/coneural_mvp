@@ -19,7 +19,7 @@ class VectorManager:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = super(VectorManager, cls).__new__(cls)
-                    cls._instance._stores: Dict[str, IVectorstore] = {}
+                    cls._instance._stores: Dict[str, FaissVectorstore] = {}
         return cls._instance
 
     def __init__(self, base_dir: str = BASE_DIR):
@@ -46,14 +46,20 @@ class VectorManager:
             except Exception as e:
                 print(f"⚠️ Failed to load store at {path}: {e}")
 
-    def create_store(self,embeddings,persist_dir:str)-> IVectorstore:
+    def create_store(self,embeddings,persist_dir:str)-> FaissVectorstore:
         print(f"🆕 Creating new FAISS vector store at: {persist_dir}")
         os.makedirs(persist_dir, exist_ok=True)
         vstore = FaissVectorstore(embeddings=embeddings, persist_dir=persist_dir)
         vstore._load_or_create_store()
         self._stores[persist_dir] = vstore
+    def load_store(self, persist_dir: str) -> FaissVectorstore:
+            if os.path.exists(os.path.join(persist_dir, "index.faiss")):
+                print(f"♻️ Loading existing FAISS vector store from disk: {persist_dir}")
+                vstore = FaissVectorstore(embeddings=embeddings, persist_dir=persist_dir)
+                vstore._load_or_create_store()
+                self._stores[persist_dir] = vstore
     # --------------------------------------------------------------------------
-    def get_store(self, embeddings, persist_dir: str) -> IVectorstore:
+    def get_store(self, embeddings, persist_dir: str) -> FaissVectorstore:
         """Return an existing or newly created FAISS vector store."""
         # Normalize path
         # if not os.path.isabs(persist_dir):
@@ -77,6 +83,8 @@ class VectorManager:
 
         return self._stores[persist_dir]
 
+    def set_store(self,persist_dir,store):
+        self._stores[persist_dir] = store
     # --------------------------------------------------------------------------
     def list_stores(self):
         """List all loaded FAISS store directories."""
