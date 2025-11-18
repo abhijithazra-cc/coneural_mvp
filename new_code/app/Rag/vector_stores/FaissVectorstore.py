@@ -81,4 +81,7 @@ class FaissVectorstore(IVectorstore):
             return
         store.delete(ids=ids_to_delete)
         store.save_local(self.persist_dir)
+        self.vectorstore = store
+        # chunks=self.get_chunks_by_doc_id(doc_id=doc_id)
+        # print(f"chunks: {chunks}")
         print(f"🗑️ Deleted {len(ids_to_delete)} chunks for doc_id={doc_id}")

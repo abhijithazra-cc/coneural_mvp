@@ -12,8 +12,8 @@ from app.services.auth import get_current_active_user
 from app.models.user_model import User as UserModel, UserType
 from app.models.access_model import UserDomainAccess
 from app.models.suborganization_model import Suborganization as SuborganizationModel
-from app.models.doc_models import DocChunk                   # ✅ from doc_models
-from app.models.org_document_model import OrgDocument       # ✅ from org_document_model
+from app.models.doc_models import DocChunk                   #  from doc_models
+from app.models.org_document_model import OrgDocument       #  from org_document_model
 from app.utils.embeddings import embed_texts
 from fastapi.responses import StreamingResponse
 # from app.utils.faiss_manager import FaissManager
@@ -93,15 +93,17 @@ def list_user_access(
 
 
 class Answer(BaseModel):
-      content:str = Field(...,description="response from llm")
-      citation:str = Field(...,description="source of generated answer file path or name")
+      content:list[str] = Field(...,description="response from llm")
+      citation:list[str] = Field(...,description="multiple file name in chunks put it into list")
 
 
 class AnswerOutput(BaseModel):
-      response1:Answer=Field(...,description="first type of reponse from llm")
-      response2:Answer=Field(...,description="second type of response from llm")
+      response:Answer=Field(...,description="Response from llm if data varies in various source give multiple answer")
 
 
+
+import uuid
+import json
 @router.post("/ask", summary="Ask a question over allowed departments")
 def ask(
     data:AskRequest,
@@ -120,7 +122,10 @@ def ask(
     for suborg_id in user_allowed_suborg_ids:
         vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\\{data.org_id}\\dept\\{suborg_id}")
        # vectorStore.set_vector_store(docs=rows,embeddings=embeddings)
+        
         rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=data.top_k)
+        chunks=rv.invoke(input=data.q)
+        print("chunks",chunks)
         retrieval_list.append(rv)
         # docs=rv.get_relevant_document(query=query)
         # docs_list.extend(docs)
@@ -138,6 +143,8 @@ def ask(
 
     else :
        answer = llm.generate_answer_with_structure(context=docs_list,query=data.q,schema=AnswerOutput)
+       res=json.loads(answer.content)
+       print("res",res)
     #    answer=llm.generate_answer(context=docs_list,query=data.q)
     #    return {
     #     "answer": answer.content,

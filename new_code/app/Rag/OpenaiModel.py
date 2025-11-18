@@ -4,7 +4,7 @@ from langchain_core.runnables import RunnablePassthrough,RunnableLambda
 from langchain_core.prompts import PromptTemplate
 # Initialize the OpenAI language model for response generation
 from pydantic import BaseModel
-
+from langchain_core.output_parsers import PydanticOutputParser
 class OpenaiModel():
       def __init__(self):
             self.llm=ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0,api_key=os.getenv('OPENAI_API_KEY'),streaming=True)
@@ -85,14 +85,70 @@ Assistant:"""
       def get_llm(self):
             return self.llm
       
+
+      def generate_answer_with_structure(self,context,query,schema:BaseModel):
+            parser=PydanticOutputParser(pydantic_object=schema)
+            chain=self.get_prompt_with_parser(parser=parser) | self.get_llm()
+            # chain=self.get_prompt() | self.get_llm()
+
+            result=chain.invoke({"context":context,"query":query})
+            self.model_response=result
+            return result
+
+
+
+
+
       def generate_answer(self,context,query):
             chain=self.get_prompt() | self.get_llm()
 
             result=chain.invoke({"context":context,"query":query})
             self.model_response=result
             return result
+            
+      def get_prompt_with_parser(self,parser):
+            PROMPT_TEMPLATE = """
+SYSTEM PROMPT:
+
+You are a Retrieval-Augmented Generation (RAG) assistant.
+
+You are provided with the following context chunks extracted from one or more documents.
+Use ONLY this context to answer the user's question.
+
+Your rules are:
+1. **Do not generate or infer** any information not explicitly present in the provided context.
+2. **If the context does not contain an answer**, reply exactly with:
+   "The answer is not available in the provided context."
+3. Never use prior knowledge or external facts.
+4. Do not make assumptions, guesses, or creative elaborations.
+5. When citing or explaining, refer only to what is in the chunks.
+6. Maintain factual accuracy strictly bound to the given chunks.
+7. Be concise and formal.
+8. Answer should not look like gpt generated
+
+The response should be specific and use statistics or numbers when possible.
+
+
+<context>
+{context}
+</context>
+<question>
+{query}
+</question>
+
+
+Assistant:"""
+
+# Create a PromptTemplate instance with the defined template and input variables
+            self.prompt = PromptTemplate(
+          template=f"{PROMPT_TEMPLATE}{{format_instruction}}", input_variables=["context", "query"],
+          partial_variables={'format_instruction':parser.get_format_instructions()}
+          )
+            return self.prompt
+      
       def generate_answer_with_structure(self,context,query,schema:BaseModel):
-            chain=self.get_prompt() | self.get_llm().with_structured_output(schema=schema)
+            parser=PydanticOutputParser(pydantic_object=schema)
+            chain=self.get_prompt_with_parser(parser=parser) | self.get_llm()
             # chain=self.get_prompt() | self.get_llm()
 
             result=chain.invoke({"context":context,"query":query})
