@@ -7,6 +7,7 @@ class UserType(str, PyEnum):
     ADMIN = "ADMIN"
     AUTHOR = "AUTHOR"
     USER = "USER"
+    DEPT_HEAD="DEPT_HEAD"
 
 class User(Base):
     __tablename__ = "users"

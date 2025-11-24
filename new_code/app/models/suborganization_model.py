@@ -10,7 +10,7 @@ class Suborganization(Base):
     name = Column(String(255), nullable=False, index=True)
     description = Column(String(1024))
     is_active = Column(Boolean, default=True)
-
+    dept_head=Column(Integer,ForeignKey("users.id"),nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
