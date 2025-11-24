@@ -7,73 +7,54 @@ from pydantic import BaseModel
 from langchain_core.output_parsers import PydanticOutputParser
 class OpenaiModel():
       def __init__(self):
-            self.llm=ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0,api_key=os.getenv('OPENAI_API_KEY'),streaming=True)
+            self.llm=ChatOpenAI(model_name="gpt-4.1", temperature=0,api_key=os.getenv('OPENAI_API_KEY'),streaming=True)
             self.prompt=None
             self.model_response=None
+   
       def get_prompt(self):
             PROMPT_TEMPLATE = """
-SYSTEM PROMPT:
+You are an enterprise RAG assistant specialized in answering questions based on the provided organization documents context.
 
-You are a Retrieval-Augmented Generation (RAG) assistant.
+FOLLOW STRICT RULES:
 
-You are provided with the following context chunks extracted from one or more documents.
-Use ONLY this context to answer the user's question.
+1. Always read the provided context carefully.  
+2. If the answer is found in the context →  
+      • Extract it exactly  
+      • Provide a citation for each extracted part using this format:
+            "citation": "filename"
 
-Your rules are:
-1. **Do not generate or infer** any information not explicitly present in the provided context.
-2. **If the context does not contain an answer**, reply exactly with:
-   "The answer is not available in the provided context."
-3. Never use prior knowledge or external facts.
-4. Do not make assumptions, guesses, or creative elaborations.
-5. When citing or explaining, refer only to what is in the chunks.
-6. Maintain factual accuracy strictly bound to the given chunks.
-7. Be concise and formal.
-8. Answer should not look like gpt generated
+3. If multiple context chunks contain different or conflicting information →  
+      • Provide MULTIPLE answers  
 
-The response should be specific and use statistics or numbers when possible.
+      Example : pdf1 contain ww1 happend in 1940 , pdf2 say ww1 happend in 1942
+                 so ANSWER FORMATE:  1. answer1:ww1 happend in 1940 , citation:pdf1, 2. answer2:ww2 happend in 1942 citation:pdf2
+4. If context does NOT contain the answer →  
+      • Respond using your own general knowledge  
+      • Clearly mark the citation as:
+            "citation": "model_knowledge"
 
-IMPORTANT NOTE:
+5. Never hallucinate citations that don't exist.  
 
-Always answer every user query in TWO different styles.
 
-1) Response A — Short & Direct
-   - 3 to 6 lines
-   - Straight to the point
-   - Actionable
-   - No unnecessary explanation
+ANSWER FORMAT:
 
-2) Response B — Detailed & Expanded
-   - Full explanation
-   - Step-by-step reasoning
-   - Examples
-   - Best practices
-   - Edge cases if relevant
+if multiple conflicting data ,remember filename across citation should be unique
+answer1:... , citation1: ...filename1
+answer2:... , citation2: ...filename2
+if same answer in multiple document source , remember filename across citation should be unique
+answer1..., citation1:...filename1, ...filename2
+.
+.
+.
 
-RULES:
-- Always output both Response A and Response B for every user query.
-- Label them exactly as:
-  "Response A (Short):"
-  "Response B (Detailed):"
-- Do NOT ask which one the user prefers. Always generate both.
-- Both responses must answer the same question but with different depth.
-
-OUTPUT FORMAT:
-
-Response A (Short):
-[short answer]
-
-Response B (Detailed):
-[detailed answer]
 
 <context>
 {context}
 </context>
-
 <question>
 {query}
 </question>
 
-The response should be specific and use statistics or numbers when possible.
 
 Assistant:"""
 
@@ -101,7 +82,7 @@ Assistant:"""
 
       def generate_answer(self,context,query):
             chain=self.get_prompt() | self.get_llm()
-
+            # print(self.get_prompt())
             result=chain.invoke({"context":context,"query":query})
             self.model_response=result
             return result
@@ -157,6 +138,18 @@ Assistant:"""
       def generate_stream_answer(self,context,query):
             import time
             chain=self.get_prompt() | self.get_llm()
+            # chain=self.get_prompt() | RunnableLambda(lambda x: self.get_llm().stream(x))
+            result=chain.stream({"context":context,"query":query})
+            # result=chain.invoke({"context":context,"query":query})
+            # for res in result:
+            #       print(res.content,end="",flush=True)
+            # self.model_response=result
+            return result
+      def generate_stream_answer_with_structure(self,context,query,schema):
+            import time
+            parser=PydanticOutputParser(pydantic_object=schema)
+            chain=self.get_prompt_with_parser(parser=parser) | self.get_llm()
+            # chain=self.get_prompt() | self.get_llm()
             # chain=self.get_prompt() | RunnableLambda(lambda x: self.get_llm().stream(x))
             result=chain.stream({"context":context,"query":query})
             # result=chain.invoke({"context":context,"query":query})

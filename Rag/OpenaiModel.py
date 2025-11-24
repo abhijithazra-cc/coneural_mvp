@@ -6,26 +6,49 @@ from langchain_core.prompts import PromptTemplate
 
 class OpenaiModel():
       def __init__(self):
-            self.llm=ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0,api_key=os.getenv('OPENAI_API_KEY'),streaming=True)
+            self.llm=ChatOpenAI(model_name="gpt-4o-mini", temperature=0,api_key=os.getenv('OPENAI_API_KEY'),streaming=True)
             self.prompt=None
             self.model_response=None
+
       def get_prompt(self):
             PROMPT_TEMPLATE = """
-Human: You are an AI assistant, and provides answers to questions by using fact based and statistical information when possible.
-Use the following pieces of information to provide a concise answer to the question enclosed in <question> tags.
-If you don't know the answer, just say that you don't know, don't try to make up an answer.
+You are an enterprise RAG assistant specialized in answering questions based on the provided organization documents context.
+
+FOLLOW STRICT RULES:
+
+1. Always read the provided context carefully.  
+2. If the answer is found in the context →  
+      • Extract it exactly  
+      • Never modify facts  
+      • Provide a citation for each extracted part using this format:
+            "citation": "documnent_id,filename"
+
+3. If multiple context chunks contain different or conflicting information →  
+      • Provide MULTIPLE answers  
+      • Each with its own citation:
+            "answer1": "content": "...", "citation": "..." 
+            "answer2": "content": "...", "citation": "..." 
+
+4. If context does NOT contain the answer →  
+      • Respond using your own general knowledge  
+      • Clearly mark the citation as:
+            "citation": "model_knowledge"
+
+5. Never hallucinate citations that don't exist.  
+6. Final output must ALWAYS be valid JSON with this schema:
+
+ANSWER FORMAT:
+answer:... , citation: ...filename
+
 <context>
 {context}
 </context>
-
 <question>
 {query}
 </question>
 
-The response should be specific and use statistics or numbers when possible.
 
 Assistant:"""
-
 # Create a PromptTemplate instance with the defined template and input variables
             self.prompt = PromptTemplate(
           template=PROMPT_TEMPLATE, input_variables=["context", "query"]
