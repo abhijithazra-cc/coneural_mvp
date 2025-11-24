@@ -319,6 +319,34 @@ def _ensure_org_admin(current_user: UserModel, org_id: int) -> None:
     if current_user.user_type != UserType.ADMIN or current_user.organization_id != org_id:
         raise HTTPException(status_code=403, detail="Only the organization admin can perform this action")
 
+def _ensure_admin_can_delete_dept_head(db: Session,user_id: int, org_id: int,suborg_id:int)-> None:
+     sub = (
+        db.query(SuborganizationModel)
+        .filter(
+            SuborganizationModel.id == suborg_id,
+            SuborganizationModel.organization_id == org_id,
+            SuborganizationModel.dept_head==user_id
+        )
+        .first()
+    )
+     if sub:
+          raise HTTPException(status_code=403, detail="Only the organization admin can remove department head")
+
+def _ensure_org_admin_or_dept_head(db: Session,current_user: UserModel, org_id: int,suborg_id:int) -> None:
+    """
+    Only admins of the SAME org can manage access for that org.
+    """
+    sub = (
+        db.query(SuborganizationModel)
+        .filter(
+            SuborganizationModel.id == suborg_id,
+            SuborganizationModel.organization_id == org_id,
+        )
+        .first()
+    )
+    if (current_user.user_type != UserType.ADMIN and sub.dept_head!=current_user.id) or current_user.organization_id != org_id:
+        raise HTTPException(status_code=403, detail="Only the organization admin or dept head can perform this action")
+
 
 def _access_public(a: UserDomainAccess) -> Dict:
     return {
@@ -385,6 +413,69 @@ def list_user_access(
 #     db: Session = Depends(get_db),
 #     current_user: UserModel = Depends(get_current_active_user),
 # ):
+from types import SimpleNamespace
+import json
+@router.post(
+    "/assign-dept-head",
+
+)
+def assign_dept_head(
+    used_id: int,
+    organization_id:int,
+    suborganization_id:int,
+    neural_cap:int,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user),
+):
+    """
+    Grant or update a user's permissions for a department (suborganization):
+
+    - org_id, suborg_id, user_id (required)
+    - can_read, can_upload, is_author
+      * If is_author=True, user can_read and can_upload will be forced to True.
+    - neural_cap (optional, if present in model)
+    """
+    
+    payload={"id":used_id,"organization_id":organization_id,"suborganization_id":suborganization_id,"neural_cap":neural_cap}
+    payload=json.loads(json.dumps(payload), object_hook=lambda d: SimpleNamespace(**d))
+
+    _ensure_org_admin(current_user, payload.organization_id)
+    _ensure_org_exists(db, payload.organization_id)
+    _ensure_suborg_in_org(db, payload.organization_id, payload.suborganization_id)
+    user = _ensure_user_exists(db, payload.id)
+    sub_org=db.query(SuborganizationModel).filter(SuborganizationModel.id==suborganization_id).first()
+    sub_org.dept_head=used_id
+    if user.organization_id != payload.organization_id:
+        raise HTTPException(status_code=403, detail="User is not in this organization")
+    # user.user_type=UserType.DEPT_HEAD
+    
+    db.commit()
+    db.refresh(sub_org)
+    # author implies upload & read
+    can_read = True
+    can_upload = True
+    is_author = True
+
+
+    access = UserDomainAccess(
+            org_id=payload.organization_id,
+            suborg_id=payload.suborganization_id,
+            user_id=payload.id,
+            can_read=can_read,
+            can_upload=can_upload,
+            is_author=is_author,
+        )
+    if hasattr(access, "neural_cap") and payload.neural_cap is not None:
+            access.neural_cap = payload.neural_cap
+            db.add(access)
+
+
+    db.commit()
+    db.refresh(access)
+
+    return {"message": "Access upserted"}
+
+
 
 
 @router.post(
@@ -405,12 +496,16 @@ def grant_access(
       * If is_author=True, user can_read and can_upload will be forced to True.
     - neural_cap (optional, if present in model)
     """
-    _ensure_org_admin(current_user, payload.org_id)
+    
+    # _ensure_org_admin(current_user, payload.org_id)
+    _ensure_org_admin_or_dept_head(db,current_user,payload.org_id,payload.suborg_id)
     _ensure_org_exists(db, payload.org_id)
     _ensure_suborg_in_org(db, payload.org_id, payload.suborg_id)
-    user = _ensure_user_exists(db, payload.user_id)
 
-    if user.organization_id != payload.org_id:
+    user = _ensure_user_exists(db, payload.user_id)
+    
+
+    if user.organization_id != payload.org_id :
         raise HTTPException(status_code=403, detail="User is not in this organization")
 
     # author implies upload & read
@@ -462,8 +557,9 @@ def revoke_access(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    _ensure_org_admin(current_user, payload.org_id)
-
+    # _ensure_org_admin(current_user, payload.org_id)
+    _ensure_org_admin_or_dept_head(db,current_user,payload.org_id,payload.suborg_id)
+    _ensure_admin_can_delete_dept_head(db,payload.user_id,payload.org_id,payload.suborg_id)
     access = (
         db.query(UserDomainAccess)
         .filter(
