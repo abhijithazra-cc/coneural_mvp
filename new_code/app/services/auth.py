@@ -239,7 +239,7 @@ def get_current_active_user(current_user: UserModel = Depends(get_current_user))
 
 # app/routers/auth.py
 from typing import Optional
-
+from fastapi import WebSocket
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -276,6 +276,31 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[UserMo
 # ---------------------------------------------------------------------
 # Dependencies
 # ---------------------------------------------------------------------
+def get_current_user_via_socket(websocket:WebSocket,db: Session = Depends(get_db))-> UserModel:
+    token = websocket.query_params.get("token")
+    print("token",token)
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    print("payoad",payload)
+    # credentials_exception = HTTPException(
+    #     status_code=status.HTTP_401_UNAUTHORIZED,
+    #     detail="Could not validate credentials",
+    #     headers={"WWW-Authenticate": "Bearer"},
+    # )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        print("payoad",payload)
+        email: str = payload.get("sub")
+        if email is None:
+            raise 'credentials_exception'
+    except JWTError:
+        raise 'credentials_exception'
+
+    user = get_user_by_email(db, email)
+    print("user",user)
+    if user is None:
+        raise 'credentials_exception'
+    return user
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -285,6 +310,7 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    print("token",token)
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
@@ -300,6 +326,13 @@ def get_current_user(
 
 def get_current_active_user(
     current_user: UserModel = Depends(get_current_user),
+) -> UserModel:
+    # If you track is_active, enforce here:
+    # if not current_user.is_active:
+    #     raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+def get_current_active_socket_user(
+    current_user: UserModel = Depends(get_current_user_via_socket),
 ) -> UserModel:
     # If you track is_active, enforce here:
     # if not current_user.is_active:

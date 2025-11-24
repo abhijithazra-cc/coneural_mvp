@@ -7,6 +7,9 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import sys, os
 from Rag.document_loaders.PdfLoader import PdfLoader
+from Rag.document_loaders.CsvLoader import CsvLoader
+from Rag.document_loaders.ImageLoader import ImageLoader
+from Rag.document_loaders.PptLoader import PptLoader
 from langchain_openai.embeddings import OpenAIEmbeddings
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from Rag.document_loaders.TxtLoader import TxtLoader
@@ -20,7 +23,10 @@ router = APIRouter(prefix="/bot", tags=["ChatBot"])
 
 embeddings=OpenAIEmbeddings(api_key=os.getenv('OPENAI_API_KEY'),model='text-embedding-3-small')
 
-loader=PdfLoader()
+# loader=PdfLoader()
+# loader=CsvLoader()
+# loader=ImageLoader()
+loader=PptLoader()
 splitter=CharacterSplitter()
 vectorStore=FaissVectorstore(embeddings=embeddings)
 retriever=Retriever()
@@ -104,14 +110,14 @@ async def upload_file(file: UploadFile = File(...)):
     # Read the file contents
     
     content = await file.read()
-    
+    print("req came")
     # Optionally, save it to disk
     # with open(f"{file.filename}", "wb") as f:
     #     f.write(content)
     # file_path=os.path.abspath(file.filename)
     loader.load_document(file=content,filename=file.filename)
     docs=loader.get_document()
-    print(docs)
+    # print(docs)
     # loader.load_document(file_path)
     chuncks=splitter.split_documents(docs=docs,chunk_size=1000,chunk_overlap=100)
     vectorStore.set_vector_store(chuncks,embeddings=embeddings)
