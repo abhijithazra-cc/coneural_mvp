@@ -18,20 +18,25 @@ from Rag.vector_stores.FaissVectorstore import FaissVectorstore
 from Rag.Retriever import Retriever
 from Rag.OpenaiModel import OpenaiModel
 import time
+from spire.pdf import *
+from spire.pdf.common import*
+from Rag.HighlightText import HighlightText
+# Create a PdfDocument object
+# document = PdfDocument()
 load_dotenv()
 router = APIRouter(prefix="/bot", tags=["ChatBot"])
 
 embeddings=OpenAIEmbeddings(api_key=os.getenv('OPENAI_API_KEY'),model='text-embedding-3-small')
 
-# loader=PdfLoader()
+loader=PdfLoader()
 # loader=CsvLoader()
 # loader=ImageLoader()
-loader=PptLoader()
+# loader=PptLoader()
 splitter=CharacterSplitter()
 vectorStore=FaissVectorstore(embeddings=embeddings)
 retriever=Retriever()
 llm=OpenaiModel()
-
+hi=HighlightText(output_path='output.pdf')
 @router.get("/show_document")
 async def get_document():
     "See Uploaded Document"
@@ -43,13 +48,15 @@ async def get_document():
 async def get_relevant_documents_chunks(query:str="",search_type="similarity",top_n_chunks:int=1):
     "Get Relevent Documents Chunk on basis of query"
     s=time.monotonic()
-    emd=embeddings.embed_query(query)
-    print(emd)
-    print("*****",type(emd),"*****")
+    # emd=embeddings.embed_query(query)
+
     rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type=search_type,top_n=top_n_chunks)
     
     docs=rv.get_relevant_document(query=query)
+    source=docs
+    print("source",source)
     docs=llm.generate_answer(context=docs,query=query)
+    hi.highlight_text(source)
     e=time.monotonic()
     return {"response":docs,"processing_time":e-s}
 
@@ -87,8 +94,8 @@ async def get_relevant_documents_chunks(query:str="",search_type="similarity",to
 @router.post("/show_relevent_chunk")
 async def get_relevant_documents_chunks(query:str="",search_type="similarity",top_n_chunks:int=1):
     "Get Relevent Documents Chunk on basis of query"
-    retriever.set_retreiver(vector_store=vectorStore.get_vector_store(),search_type=search_type,top_n=top_n_chunks)
-    docs=retriever.get_relevant_document(query=query)
+    rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type=search_type,top_n=top_n_chunks)
+    docs=rv.get_relevant_document(query=query)
 
     
     return docs
@@ -121,6 +128,9 @@ async def upload_file(file: UploadFile = File(...)):
     # loader.load_document(file_path)
     chuncks=splitter.split_documents(docs=docs,chunk_size=1000,chunk_overlap=100)
     vectorStore.set_vector_store(chuncks,embeddings=embeddings)
+    vectorStore.add_documents(documents=chuncks,doc_id=1)
+    hi.set_bytes(content)
+    # print("page",page)
     e=time.monotonic()
 
     return {"filename": file.filename, "size": len(content),"message":"vectore store generated peform query","process_time":e-s}

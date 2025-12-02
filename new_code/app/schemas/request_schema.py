@@ -15,3 +15,11 @@ class AskRequest(BaseModel):
     q: str
     top_k:int
     stream: Optional[bool] = True
+class AskRequestOnDocument(BaseModel):
+    selected:OptionEnum
+    doc_id:list[int]
+    org_id: int
+    user_id: int
+    q: str
+    top_k:int
+    stream: Optional[bool] = True
