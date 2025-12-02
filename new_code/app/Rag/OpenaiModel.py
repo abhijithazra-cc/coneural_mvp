@@ -7,56 +7,71 @@ from pydantic import BaseModel
 from langchain_core.output_parsers import PydanticOutputParser
 class OpenaiModel():
       def __init__(self):
-            self.llm=ChatOpenAI(model_name="gpt-4.1", temperature=0,api_key=os.getenv('OPENAI_API_KEY'),streaming=True)
+            self.llm=ChatOpenAI(model_name="gpt-4.1", temperature=0,api_key=os.getenv('OPENAI_API_KEY'),streaming=False)
             self.prompt=None
             self.model_response=None
    
       def get_prompt(self):
             PROMPT_TEMPLATE = """
-You are an enterprise RAG assistant specialized in answering questions based on the provided organization documents context.
+You are an enterprise-grade RAG Assistant optimized for factual, citation-based answers.
 
-FOLLOW STRICT RULES:
+=========================================
+CORE RULES
+=========================================
 
-1. Always read the provided context carefully.  
-2. If the answer is found in the context →  
-      • Extract it exactly  
-      • Provide a citation for each extracted part using this format:
-            "citation": "filename"
+1. Always read the provided context carefully before answering.
 
-3. If multiple context chunks contain different or conflicting information →  
-      • Provide MULTIPLE answers  
+2. If the context contains the answer:
 
-      Example : pdf1 contain ww1 happend in 1940 , pdf2 say ww1 happend in 1942
-                 so ANSWER FORMATE:  1. answer1:ww1 happend in 1940 , citation:pdf1, 2. answer2:ww2 happend in 1942 citation:pdf2
-4. If context does NOT contain the answer →  
-      • Respond using your own general knowledge  
-      • Clearly mark the citation as:
-            "citation": "model_knowledge"
+     • Extract the exact values from the documents.  
+     • Never rewrite or modify factual numbers.  
+     • If multiple documents contain the same answer, treat them as supporting that answer.  
+     • If different documents give different answers, treat them as conflicting facts.
 
-5. Never hallucinate citations that don't exist.  
+3. When conflicting information exists:
 
+     • Write ONE combined narrative answer.  
+     • The answer must:
+           - Explain the conflict
+           - Mention which documents support each value
+           - State which value is most recent *only if date_time metadata is available*
+     • Do NOT invent any date_time or metadata.
+     • Use citations directly inside the sentence:  
+           (sources: file1.pdf, file2.pdf)
 
-ANSWER FORMAT:
+4. If the answer does NOT appear in the context:
 
-if multiple conflicting data ,remember filename across citation should be unique
-answer1:... , citation1: ...filename1
-answer2:... , citation2: ...filename2
-if same answer in multiple document source , remember filename across citation should be unique
-answer1..., citation1:...filename1, ...filename2
-.
-.
-.
+     • Start with: "Not available in provided context."  
+     • Then answer using your general knowledge.  
+     • Use citation: ["model_knowledge"]
 
+5. Do NOT hallucinate filenames or metadata.
+
+=========================================
+FINAL OUTPUT FORMAT (STRICT)
+=========================================
+
+You must ONLY return the following two fields:
+
+{{
+  "response": "<Single natural-language answer with inline citations> ",
+  "citation": [json("file1.pdf","doc_id"), json("file2.pdf","doc_id"), ...]   // list of every file used
+}}
+
+=========================================
+INPUT
+=========================================
 
 <context>
 {context}
 </context>
+
 <question>
 {query}
 </question>
 
-
-Assistant:"""
+Assistant:
+"""
 
 # Create a PromptTemplate instance with the defined template and input variables
             self.prompt = PromptTemplate(

@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Boolean, Index
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Boolean, Index,LargeBinary
+from sqlalchemy.dialects.mysql import LONGBLOB
 from sqlalchemy.dialects.mysql import JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -37,6 +38,7 @@ class OrgDocument(Base):
     filename = Column(String(512), nullable=False)
     mime_type = Column(String(128))
     size_bytes = Column(Integer)
+    file_bytes=Column(LONGBLOB)
     chunks = relationship("DocChunk", back_populates="document", cascade="all, delete-orphan")
     created_at = Column(DateTime, server_default=func.now())
 

@@ -32,7 +32,8 @@ router = APIRouter(prefix="/org-documents", tags=["org_documents"])
 
 # 5 MB limit as requested
 MAX_FILE_BYTES = 5 * 1024 * 1024  # 5 MB
-
+import time
+import base64
 
 @router.post(
     "/",
@@ -63,7 +64,7 @@ async def upload_org_document(
         * store text chunks in `doc_chunks`
         * create FAISS HNSW index for (org_id, suborg_id) via `add_vectors(...)`
     """
-
+    s=time.monotonic()
     # 1) Suborg must belong to org
     sub = (
         db.query(Suborganization)
@@ -144,6 +145,7 @@ async def upload_org_document(
         raise HTTPException(status_code=400, detail="No text content in file")
 
     # 7) Create document row
+    doc_bytes=base64.b64encode(payload)
     doc = OrgDocument(
         org_id=org_id,
         suborg_id=suborg_id,
@@ -152,6 +154,8 @@ async def upload_org_document(
         filename=file.filename,
         mime_type=file.content_type or "application/octet-stream",
         size_bytes=len(payload),
+        file_bytes=doc_bytes
+
     )
     db.add(doc)
     db.flush()  # doc.id becomes available
@@ -188,7 +192,7 @@ async def upload_org_document(
     #     [doc.id * 1_000_000 + i for i in range(len(chunks))], dtype="int64"
     # )
     # add_vectors(org_id=org_id, suborg_id=suborg_id, vectors=vectors, ids=ids)
-
+    e=time.monotonic()
     return {
         "doc": {
             "id": doc.id,
@@ -198,6 +202,7 @@ async def upload_org_document(
             "chunks": len(chunks),
         },
         "department": {"org_id": org_id, "suborg_id": suborg_id},
+        "upload_time_taken":e-s
     }
 
 @router.delete(
@@ -209,6 +214,7 @@ def delete_org_document(
     db: Session = Depends(get_db),
     current: UserModel = Depends(get_current_active_user),
 ):
+    s=time.monotonic()
     doc = db.query(OrgDocument).filter(OrgDocument.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -227,7 +233,8 @@ def delete_org_document(
     # NOTE: We are not removing from FAISS index here; next time you rebuild index
     # you would re-add remaining chunks. Implementing FAISS delete is possible but
     # more complex; for now this keeps DB clean and doesn't affect uploads.
-    return {"message": "Document deleted successfully"}
+    e=time.monotonic()
+    return {"message": "Document deleted successfully","delete_time":e-s}
 
 
 # # app/routers/documents.py

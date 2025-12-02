@@ -31,5 +31,3 @@ class PdfLoader(Idocloader):
               res+=" "+item.page_content
 
           return res
-# file_path = "./example_data/layout-parser-paper.pdf"
-# loader = PyMuPDFLoader(file_path)

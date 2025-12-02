@@ -1,7 +1,7 @@
 from app.Rag.abstractions.IVectorstore import IVectorstore
 from langchain_community.vectorstores import FAISS
 import os
-
+from datetime import datetime
 class FaissVectorstore(IVectorstore):
      # def __init__(self):
      #      self.vectorstre=None
@@ -47,8 +47,11 @@ class FaissVectorstore(IVectorstore):
             store = self._load_or_create_store()
             # assign doc_id metadata for deletion tracking
           #   doc_id = str(uuid.uuid4())
+            now=datetime.now()
+            print("time",now)
             for c in documents:
                 c.metadata["doc_id"] = doc_id
+                c.metadata["date_time"]=now.isoformat()
             self.doc_id_list.append(doc_id)
 
             store.add_documents(documents=documents)

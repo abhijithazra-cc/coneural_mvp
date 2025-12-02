@@ -1,8 +1,8 @@
 # app/routers/qa.py
 
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, Query,WebSocket
-from app.schemas.request_schema import AskRequest
+from fastapi import APIRouter, Depends, HTTPException, status, Query,WebSocket,BackgroundTasks
+from app.schemas.request_schema import AskRequest,AskRequestOnDocument
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 import os
@@ -13,7 +13,8 @@ from app.models.user_model import User as UserModel, UserType
 from app.models.access_model import UserDomainAccess
 from app.models.suborganization_model import Suborganization as SuborganizationModel
 from app.models.doc_models import DocChunk                   #  from doc_models
-from app.models.org_document_model import OrgDocument       #  from org_document_model
+# from app.models.org_document_model import OrgDocument       #  from org_document_model
+from app.models.doc_models import OrgDocument
 from app.utils.embeddings import embed_texts
 from app.models.user_thread_model import UserThreads
 from fastapi.responses import StreamingResponse
@@ -23,6 +24,7 @@ from app.Rag.VectorManager import vectorManager
 from langchain_classic.retrievers.ensemble import EnsembleRetriever
 from typing import Dict, List
 from langchain_classic.text_splitter import CharacterTextSplitter
+from app.Rag.HighlightText import HighlightText
 router = APIRouter(prefix="/qa", tags=["qa"])
 # _faiss = FaissManager(dim=get_embed_dim())
 
@@ -225,6 +227,136 @@ def _allowed_thread_id(db,current_user,t_id):
 
 
 
+import time
+import re
+import base64
+from app.Rag.PdfUploader import upload_pdf_to_github
+def _get_doc_by_id(db:Session,current_user:UserModel,doc_id:int):
+     docs=db.query(OrgDocument).filter(OrgDocument.org_id==current_user.organization_id,OrgDocument.id==doc_id)
+     return [u.file_bytes for u in docs]
+def filter_sources_by_citation(db,current_user,response_text, sources):
+    # 1. Extract all filenames mentioned after "citation"
+    # Example fragment: "citation1: virat kohli 4.pdf"
+    cited_files = re.findall(r"([\w\s\-()]+\.(?:pdf|PDF))", response_text)
+
+    # Normalize filenames
+    cited_files = [f.strip() for f in cited_files]
+    print(cited_files)
+    result = {}
+
+    # 2. Filter sources matching the cited filenames
+    for src in sources:
+        # print(src.metadata['filename'].lower())
+        filename = src.metadata.get('filename')
+
+
+        if filename in cited_files:
+            doc_id = src.metadata["doc_id"]
+            page_content = src.page_content
+            print("doc_id",doc_id)
+            if doc_id not in result:
+                 result[doc_id] = {
+                    "filename": filename,
+                    "chunks": [],
+                    "link":None
+                }
+
+            # Append page content to dict
+            result[doc_id]["chunks"].append(page_content)
+    # print(result)
+    for doc_id,items in result.items():
+            
+            my_bytes=_get_doc_by_id(db,current_user,doc_id)
+            # print(my_bytes)
+            my_bytes=base64.b64decode(my_bytes[0])
+            obj=HighlightText()
+            my_bytes=obj.highlight_text(my_bytes,chunks=items['chunks'])
+            # with open('my_pdf.pdf',mode='wb') as f:
+            #       f.write(my_bytes)
+            # my_bytes=base64.b64encode(my_bytes).decode()
+            response=upload_pdf_to_github(file_name=items['filename'],owner="rahulkumarcollectcent",token="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",folder='uploads',repo='pdf-viewer',pdf_bytes=my_bytes)
+            # print(response)
+
+            result[doc_id]['link']=response['link']
+            # print(my_bytes)
+    # print("result",result)
+    return json.dumps(result)
+
+def create_link_for_citation(db, current_user, citations, sources):
+    """
+    Input citations format:
+    [
+        ["virat kohli 1.pdf", 10],
+        ["virat kohli 3.pdf", 8],
+        ["virat kohli 4.pdf", 7]
+    ]
+
+    Output format (same style, now with link):
+    [
+        ["virat kohli 1.pdf", 10, "url"],
+        ["virat kohli 3.pdf", 8, "url"],
+        ["virat kohli 4.pdf", 7, "url"]
+    ]
+    """
+
+    # Extract only filenames
+    cited_files = {c[0]: c[1] for c in citations}
+
+    # temp storage
+    file_chunks = {fname: [] for fname in cited_files}
+
+    # Collect chunks for all cited files
+    for src in sources:
+        filename = src.metadata.get("filename")
+        if filename in file_chunks:
+            file_chunks[filename].append({
+                "doc_id": src.metadata["doc_id"],
+                "content": src.page_content
+            })
+
+    final_output = []
+
+    # Process each citation entry
+    for filename, count in cited_files.items():
+
+        chunks = file_chunks[filename]
+        if not chunks:
+            # still return with no link
+            final_output.append([filename, count, None])
+            continue
+
+        # All chunks come from same PDF → get doc_id from first
+        doc_id = chunks[0]["doc_id"]
+
+        # get stored PDF bytes
+        pdf_b64 = _get_doc_by_id(db, current_user, doc_id)
+        pdf_bytes = base64.b64decode(pdf_b64[0])
+
+        # highlight text
+        highlighter = HighlightText()
+        updated_pdf_bytes = highlighter.highlight_text(
+            pdf_bytes, 
+            chunks=[c["content"] for c in chunks]
+        )
+
+        # upload to github
+        upload_res = upload_pdf_to_github(
+            file_name=filename,
+owner="rahulkumarcollectcent",token="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",
+            folder="uploads",
+            repo="pdf-viewer",
+            pdf_bytes=updated_pdf_bytes
+        )
+
+        link = upload_res.get("link")
+
+        # final array (same format as input)
+        final_output.append([filename, count, link])
+
+    return json.dumps({"citations": final_output}, indent=2)
+
+
+
 @router.websocket("/query")
 async def stream_query(websocket:WebSocket, db: Session = Depends(get_db),current_user: UserModel = Depends(get_current_active_socket_user)
     ):
@@ -247,7 +379,7 @@ async def stream_query(websocket:WebSocket, db: Session = Depends(get_db),curren
         vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\\{data['org_id']}\\dept\\{suborg_id}")
        # vectorStore.set_vector_store(docs=rows,embeddings=embeddings)
         
-        rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=data['top_k'])
+        rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type='mmr',top_n=data['top_k'])
         # chunks=rv.invoke(input=data['q'])
         # print("chunks",chunks)
         retrieval_list.append(rv)
@@ -264,15 +396,35 @@ async def stream_query(websocket:WebSocket, db: Session = Depends(get_db),curren
     thread_id=data['selected']
 
     with PyMySQLSaver.from_conn_string(conn_string=os.getenv("DATABASE_URL")) as checkpointer:
-         
+         content=""
          chatbot=builder(checkpointer=checkpointer)
          config={"configurable":{"thread_id":thread_id}}
         #  print("context",docs_list)
 
-         response =  chatbot.stream({"messages":query,"context":docs_list},config=config,stream_mode="messages")
-         for chunk,metadata in response :
-             await websocket.send_text(chunk.content)
+        #  response =  chatbot.stream({"messages":query,"context":docs_list},config=config,stream_mode="messages")
+         response =  chatbot.stream({"messages":query,"context":docs_list},config=config)
+         for event in response:
+               for item in event.values():
+                    messages=item['messages']
+                    last_message = messages[-1]
+                    await websocket.send_text(json.dumps({"data":last_message.content,"type":"chunk"}))
+        #  for chunk in response:
+        #       print(chunk)
+        #       await websocket.send_text(json.dumps({"data":"data","type":"chunk"}))
+        #  for chunk,metadata in response :
+        #     #  print(chunk)
+        #      content+=chunk.content
+        #      await websocket.send_text(json.dumps({"data":chunk.content,"type":"chunk"}))
+            #  print(chunk)
+            #  if metadata:
+        #  print("chunks",docs_list) 
+        #  print(content)
+        #  output=filter_sources_by_citation(db,current_user,content,sources=docs_list)
+        #  print("output",output)
+         await websocket.send_text(json.dumps({"data":"output","type":"metadata"}))
+            #        await websocket.send_text(json.dumps({"data":metadata,"extra":"metadata"}))
     await websocket.close()
+import sys
 @router.post("/ask", summary="Ask a question over allowed departments")
 def ask(
 
@@ -281,6 +433,7 @@ def ask(
     current_user: UserModel = Depends(get_current_active_user),
     
 ):
+    s=time.monotonic()
     # if not _can_read(db, current_user, org_id, suborg_id):
     #     raise HTTPException(status_code=403, detail="No read access to this department")
 
@@ -299,7 +452,7 @@ def ask(
        # vectorStore.set_vector_store(docs=rows,embeddings=embeddings)
         
         rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=data.top_k)
-        chunks=rv.invoke(input=data.q)
+        # chunks=rv.invoke(input=data.q)
         # print("chunks",chunks)
         retrieval_list.append(rv)
         # docs=rv.get_relevant_document(query=query)
@@ -307,48 +460,76 @@ def ask(
         
     rvm= EnsembleRetriever(retrievers=retrieval_list)
     docs_list=rvm.invoke(input=data.q)
-    # if data.stream:
-    #     print("streaming")
-    #     my_res=None
-    #     checkpointer=PyMySQLSaver.from_conn_string(conn_string=os.getenv("DATABASE_URL"))
-    #     # checkpointer.__exit__=lambda *args, **kwargs: None
-    # # answer=llm.generate_answer(context=docs_list,query=query)
-    # #    answer=llm.generate_stream_answer(context=docs_list,query=data.q)
-    # #    answer=llm.generate_stream_answer_with_structure(context=docs_list,query=data.q,schema=AnswerOutput)
-    #    # with PyMySQLSaver.from_conn_string(conn_string=os.getenv("DATABASE_URL")) as checkpointer:
-    #     chatbot=builder(checkpointer=checkpointer)
-    #     config={"configurable":{"thread_id":data.selected}}
-    #     response=chatbot.stream({"messages":data.q,"context":docs_list},config=config,stream_mode="messages") 
-    #     my_res=response
-    #     def generate(response):
-    #              for chunk,metadata in response :
-    #                    print(chunk.content)
-    #                    yield str(chunk.constent)
-    #     return StreamingResponse(generate(my_res),media_type='application/json')
-
-            #  generate(my_res)
-            #  answer=chatbot.invoke({"messages":data.q,"context":docs_list},config=config)
-    #    def generate(ans):
-    #     for item in ans:
-    #         yield str(item.content)
-
-        # return StreamingResponse(generate(my_res),media_type='application/json')
-
-    # else :
+   
     with PyMySQLSaver.from_conn_string(conn_string=os.getenv("DATABASE_URL")) as checkpointer:
              chatbot=builder(checkpointer=checkpointer)
              config={"configurable":{"thread_id":data.selected}}
     
              answer=chatbot.invoke({"messages":data.q,"context":docs_list},config=config)
-       #answer = llm.generate_answer_with_structure(context=docs_list,query=data.q,schema=AnswerOutput)
-    #   res=json.loads(answer.content)
-        #  print("res",answer)
-      #    answer=llm.generate_answer(context=docs_list,query=data.q)
-    #    return {
-    #     "answer": answer.content,
-    #     "sources": docs_list,
-    #    }
-    return {"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list}
+
+    e=time.monotonic()
+    siz=sys.getsizeof(rvm)
+    print("chunks",docs_list)
+    output=json.loads(answer['messages'][-1].content)
+    s1=time.monotonic()
+    bt=BackgroundTasks()
+    
+    my_id=bt.add_task(create_link_for_citation,db,current_user,citations=output['citation'],sources=docs_list)
+    print(bt.tasks)
+    # cit=create_link_for_citation(db,current_user,citations=output['citation'],sources=docs_list)
+    print("time",time.monotonic()-s1)
+    # print(cit)
+    return {"query_time":e-s,"response":output['response'],"citations":output['citation'],"total_token":answer['total_token']}
+    # return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list,"size":siz}
+
+
+def _get_suborg_by_doc_id(db:Session,doc_id_list:list[int]):
+     suborg_id=db.query(OrgDocument.id,OrgDocument.suborg_id).filter(OrgDocument.id.in_(doc_id_list)).all()
+     return suborg_id
+
+
+@router.post("/ask/doocuments", summary="Ask a question over allowed departments over perticular document")
+def ask_by_id(
+
+    data:AskRequestOnDocument,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user),
+    
+):
+    s=time.monotonic()
+    # if not _can_read(db, current_user, org_id, suborg_id):
+    #     raise HTTPException(status_code=403, detail="No read access to this department")
+    print(data.doc_id,data.selected)
+    doc_suborg=_get_suborg_by_doc_id(db,data.doc_id)
+    print(doc_suborg)
+    retrieval_list=[]
+
+    # user_allowed_suborg_ids=list_user_access(user_id=data.user_id,org_id=data.org_id,db=db)
+    # user_allowed_suborg_ids=list_user_access(user_id=current_user.id,org_id=data.org_id,db=db)
+    # print("all sub org ids",user_allowed_suborg_ids)
+    # if not user_allowed_suborg_ids:
+    #        raise HTTPException(status_code=403, detail="No acces to any department")
+    allowed=_allowed_thread_id(db=db,current_user=current_user,t_id=data.selected)
+    print("allowed thread",allowed)
+    if not allowed:
+       raise HTTPException(status_code=403, detail="Not valid thread for current user")
+    for doc_id,suborg_id in doc_suborg:
+         
+        vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\\{data.org_id}\\dept\\{suborg_id}")
+        rv=retriever.get_retreiver_by_doc_id(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=data.top_k,doc_id=doc_id)
+        retrieval_list.append(rv)
+    rvm= EnsembleRetriever(retrievers=retrieval_list)
+    docs_list=rvm.invoke(input=data.q)
+       
+    with PyMySQLSaver.from_conn_string(conn_string=os.getenv("DATABASE_URL")) as checkpointer:
+             chatbot=builder(checkpointer=checkpointer)
+             config={"configurable":{"thread_id":data.selected}}
+    
+             answer=chatbot.invoke({"messages":data.q,"context":docs_list},config=config)
+
+    e=time.monotonic()
+    siz=sys.getsizeof(rv)
+    return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list}
 
     # print("stream answer",stream_answer)
 
