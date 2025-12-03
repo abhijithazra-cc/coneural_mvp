@@ -14,7 +14,7 @@ from app.models.access_model import UserDomainAccess
 from app.models.suborganization_model import Suborganization as SuborganizationModel
 from app.models.doc_models import DocChunk                   #  from doc_models
 # from app.models.org_document_model import OrgDocument       #  from org_document_model
-from app.models.doc_models import OrgDocument
+from app.models.doc_models import OrgDocument,DocChunk  
 from app.utils.embeddings import embed_texts
 from app.models.user_thread_model import UserThreads
 from fastapi.responses import StreamingResponse
@@ -25,9 +25,12 @@ from langchain_classic.retrievers.ensemble import EnsembleRetriever
 from typing import Dict, List
 from langchain_classic.text_splitter import CharacterTextSplitter
 from app.Rag.HighlightText import HighlightText
+from app.models.user_chat_model import ChatMessage
+from app.models.doc_embedding_model import DocEmbedding
 router = APIRouter(prefix="/qa", tags=["qa"])
 # _faiss = FaissManager(dim=get_embed_dim())
-
+from pydantic import BaseModel, Field
+from typing import List, Literal, Dict, Any
 def _access_public(a: UserDomainAccess) -> Dict:
     return {
         "id": a.id,
@@ -121,16 +124,48 @@ def list_user_threads(
 # ):
 
 
-class Answer(BaseModel):
-      content:list[str] = Field(...,description="response from llm")
-      citation:list[str] = Field(...,description="multiple file name in chunks put it into list")
+
+class CitationItem(BaseModel):
+    file: str = Field(..., description="Name of the PDF or source file used")
+    doc_id: str = Field(..., description="Document id present in metadata with name doc_id")
 
 
-class AnswerOutput(BaseModel):
-      response:Answer=Field(...,description="Response from llm if data varies in various source give multiple answer")
+class HtmlItem(BaseModel):
+    tag: str = Field(
+        ...,
+        description="HTML tag name WITHOUT brackets (e.g., 'h1', 'p', 'li', 'code')"
+    )
+    content: str = Field(
+        ...,
+        description=(
+            "Text content belonging to this tag. "
+            "can be streamed token-by-token."
+        )
+    )
 
 
-
+class RAGResponse(BaseModel):
+    html_response: List[HtmlItem] = Field(
+        ...,
+        description=(
+            "List of sequential UI blocks. Frontend can stream and render block-by-block "
+            "to produce ChatGPT-like beautiful output." 
+            "original response of llm be exact same as yours"
+            "your only job is to convert hat response into html tag and content type formate"
+        ),
+    )
+    response: str = Field(
+        ...,
+        description=(
+            "llm response of user query"
+        ),
+    )
+    citation: List = Field(
+        ..., description="Files used for answering"
+    )
+    is_context_availale: Literal["True", "False"] = Field(
+        ..., description="Whether answer was generated from provided context"
+    )
 import uuid
 
 
@@ -181,14 +216,15 @@ class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     total_token:int
     context:list
+
 def chat_node(state: ChatState):
     messages = state['messages'][-1]
     context=state["context"]
     # print("context",context)
     
-    response=llm.generate_answer(context=context,query=messages)
+    # response=llm.generate_answer(context=context,query=messages)
     # print("response",response.content)
-    # response=llm.generate_answer_with_structure(context=context,query=messages,schema=AnswerOutput)
+    response=llm.generate_answer_with_structure(context=context,query=messages,schema=RAGResponse)
     # response={"response1":response.response1.content,"citation1":response.response1.citation,"response2":response.response2.content,"citation2":response.response2.citation}
     # response = llm.invoke(messages)
     # print("response",response)
@@ -231,16 +267,23 @@ import time
 import re
 import base64
 from app.Rag.PdfUploader import upload_pdf_to_github
+from app.Rag.TexttoPdf import text_to_pdf_bytes
+# def _get_doc_by_id(db:Session,current_user:UserModel,doc_id:int):
+       
+     
+#      docs=db.query(DocChunk).filter(DocChunk.org_id==current_user.organization_id,DocChunk.doc_id==doc_id)
+#      return [u.content for u in docs]
 def _get_doc_by_id(db:Session,current_user:UserModel,doc_id:int):
+     
      docs=db.query(OrgDocument).filter(OrgDocument.org_id==current_user.organization_id,OrgDocument.id==doc_id)
      return [u.file_bytes for u in docs]
-def filter_sources_by_citation(db,current_user,response_text, sources):
+def filter_sources_by_citation(db,current_user,citations, sources):
     # 1. Extract all filenames mentioned after "citation"
     # Example fragment: "citation1: virat kohli 4.pdf"
-    cited_files = re.findall(r"([\w\s\-()]+\.(?:pdf|PDF))", response_text)
+    # cited_files = re.findall(r"([\w\s\-()]+\.(?:pdf|PDF))", response_text)
 
     # Normalize filenames
-    cited_files = [f.strip() for f in cited_files]
+    cited_files = [f.strip() for f in citations]
     print(cited_files)
     result = {}
 
@@ -267,6 +310,15 @@ def filter_sources_by_citation(db,current_user,response_text, sources):
     for doc_id,items in result.items():
             
             my_bytes=_get_doc_by_id(db,current_user,doc_id)
+            # docs=_get_doc_by_id(db,current_user,doc_id)
+            # full_doc=""
+            # for doc in docs:
+            #      print("doc",doc)
+                 
+            #      full_doc+=doc
+            #full_doc=''.join(docs.page_content)
+            # print("my docs",docs)
+            # my_bytes=text_to_pdf_bytes(full_doc)
             # print(my_bytes)
             my_bytes=base64.b64decode(my_bytes[0])
             obj=HighlightText()
@@ -315,7 +367,7 @@ def create_link_for_citation(db, current_user, citations, sources):
             })
 
     final_output = []
-
+    print("cited file",cited_files)
     # Process each citation entry
     for filename, count in cited_files.items():
 
@@ -329,9 +381,12 @@ def create_link_for_citation(db, current_user, citations, sources):
         doc_id = chunks[0]["doc_id"]
 
         # get stored PDF bytes
-        pdf_b64 = _get_doc_by_id(db, current_user, doc_id)
-        pdf_bytes = base64.b64decode(pdf_b64[0])
-
+        # pdf_b64 = _get_doc_by_id(db, current_user, doc_id)
+        # pdf_bytes = base64.b64decode(pdf_b64[0])
+        print("****************")
+        docs=_get_doc_by_id(db,current_user,doc_id)
+        print("my docs",docs)
+        pdf_bytes=text_to_pdf_bytes("hi")
         # highlight text
         highlighter = HighlightText()
         updated_pdf_bytes = highlighter.highlight_text(
@@ -469,17 +524,30 @@ def ask(
 
     e=time.monotonic()
     siz=sys.getsizeof(rvm)
-    print("chunks",docs_list)
+    # print("chunks",docs_list)
+    # output=answer['messages'][-1].content
     output=json.loads(answer['messages'][-1].content)
+
+    print("output",output)
     s1=time.monotonic()
-    bt=BackgroundTasks()
+    # bt=BackgroundTasks()
+    # links=filter_sources_by_citation(db,current_user,citations=output['citation'],sources=docs_list)
+    # print("links",links)
+    #bt.add_task(create_link_for_citation,db,current_user,citations=output['citation'],sources=docs_list)
+
+
+    if output['is_context_availale']=='True':
+         
+       chat_message=ChatMessage(user_query=data.q,bot_response=output['response'],thread_id=data.selected,user_id=current_user.id,organization_id=data.org_id,unanswer_question=False)
+    else :
+         chat_message=ChatMessage(user_query=data.q,bot_response=output['response'],thread_id=data.selected,user_id=current_user.id,organization_id=data.org_id,unanswer_question=True)
+    db.add(chat_message)
+    db.commit()
     
-    my_id=bt.add_task(create_link_for_citation,db,current_user,citations=output['citation'],sources=docs_list)
-    print(bt.tasks)
-    # cit=create_link_for_citation(db,current_user,citations=output['citation'],sources=docs_list)
+    cit=create_link_for_citation(db,current_user,citations=output['citation'],sources=docs_list)
     print("time",time.monotonic()-s1)
-    # print(cit)
-    return {"query_time":e-s,"response":output['response'],"citations":output['citation'],"total_token":answer['total_token']}
+    print(cit)
+    return {"query_time":e-s,"response":output['response'],"html_response":output['html_response'],"citations":output['citation'],"total_token":answer['total_token'],"is_context_available":output['is_context_availale']}
     # return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list,"size":siz}
 
 
@@ -531,62 +599,3 @@ def ask_by_id(
     siz=sys.getsizeof(rv)
     return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list}
 
-    # print("stream answer",stream_answer)
-
-
-    # return answer,docs_list
-
-
-# @router.post("/ask", summary="Ask a question over allowed departments")
-# def ask(
-#     org_id: int,
-#     suborg_id: int,
-#     q: str = Query(..., description="Your question"),
-#     top_k: int = 5,
-#     db: Session = Depends(get_db),
-#     current_user: UserModel = Depends(get_current_active_user)
-# ):
-#     if not _can_read(db, current_user, org_id, suborg_id):
-#         raise HTTPException(status_code=403, detail="No read access to this department")
-
-#     # Embed the question
-#     [qvec] = embed_texts([q])
-
-#     # Search FAISS for top-k chunk_ids
-#     hits = _faiss.search(org_id, suborg_id, qvec, k=top_k)
-#     if not hits:
-#         return {"answer": "No relevant documents yet.", "snippets": []}
-
-#     # Pull matching chunks (+ join to documents for any metadata you might want)
-#     chunk_ids = [cid for cid, _ in hits]
-#     rows = db.query(DocChunk, OrgDocument)\
-#              .join(OrgDocument, OrgDocument.id == DocChunk.doc_id)\
-#              .filter(DocChunk.id.in_(chunk_ids))\
-#              .all()
-
-#     # Build context
-#     snippets = [chunk.text for (chunk, _doc) in rows]
-#     context = "\n\n".join(f"Snippet {i+1}:\n{s}" for i, s in enumerate(snippets))
-
-#     # Ask OpenAI for a precise, non-GPTy answer constrained to snippets
-#     from openai import OpenAI
-#     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-#     system_msg = (
-#         "Answer concisely using only the provided snippets. "
-#         "If the answer is not in the snippets, say you don't know. "
-#         "Avoid generic phrasing; sound like a precise human-written note."
-#     )
-#     completion = client.chat.completions.create(
-#         model="gpt-4o-mini",
-#         messages=[
-#             {"role": "system", "content": system_msg},
-#             {"role": "user", "content": f"Question: {q}\n\nContext:\n{context}"}
-#         ],
-#         temperature=0.2
-#     )
-#     answer = completion.choices[0].message.content.strip()
-
-#     return {
-#         "answer": answer,
-#         "snippets": snippets[:top_k],
-#     }
