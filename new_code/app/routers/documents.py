@@ -171,7 +171,7 @@ async def upload_org_document(
                 org_id=org_id,
                 suborg_id=suborg_id,
                 chunk_index=i,
-                content=chunk,
+                content=chunk.page_content,
             )
             for i, chunk in enumerate(chunks)
         ]

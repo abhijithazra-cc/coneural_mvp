@@ -36,6 +36,7 @@ from app.routers.documents import router as docs_router       # /org-documents
 from app.routers.access import router as access_router        # /access
 from app.routers.qa import router as qa_router
 from app.routers.onboarding import router as onboardig_router
+from app.routers.unanswered_qa import router as unanswered_router
 # 🔹 Attach routers
 app.include_router(auth_router)
 app.include_router(org_router)
@@ -45,6 +46,7 @@ app.include_router(docs_router)
 app.include_router(access_router)
 app.include_router(qa_router)
 app.include_router(onboardig_router)
+app.include_router(unanswered_router)
 
 # 🔹 Health / root endpoints
 @app.get("/")

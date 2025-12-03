@@ -12,4 +12,5 @@ class ChatMessage(Base):
     thread_id=Column(Integer,ForeignKey("user_threads.id", ondelete="CASCADE"), nullable=False)
     user_id=Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    unanswer_question=Column(Boolean,default=False)
     created_at = Column(DateTime, server_default=func.now())
