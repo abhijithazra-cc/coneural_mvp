@@ -31,6 +31,16 @@ router = APIRouter(prefix="/qa", tags=["qa"])
 # _faiss = FaissManager(dim=get_embed_dim())
 from pydantic import BaseModel, Field
 from typing import List, Literal, Dict, Any
+
+
+# from celery.bin.worker import worker
+# from celery import Celery
+# celery_app = Celery("my_tasks", broker="redis://localhost:6379/0")
+# worker()
+
+
+
+# worker.run(loglevel="INFO")
 def _access_public(a: UserDomainAccess) -> Dict:
     return {
         "id": a.id,
@@ -145,15 +155,15 @@ class HtmlItem(BaseModel):
 
 
 class RAGResponse(BaseModel):
-    html_response: List[HtmlItem] = Field(
-        ...,
-        description=(
-            "List of sequential UI blocks. Frontend can stream and render block-by-block "
-            "to produce ChatGPT-like beautiful output." 
-            "original response of llm be exact same as yours"
-            "your only job is to convert hat response into html tag and content type formate"
-        ),
-    )
+    # html_response: List[HtmlItem] = Field(
+    #     ...,
+    #     description=(
+    #         "List of sequential UI blocks. Frontend can stream and render block-by-block "
+    #         "to produce ChatGPT-like beautiful output." 
+    #         "original response of llm be exact same as yours"
+    #         "your only job is to convert hat response into html tag and content type formate"
+    #     ),
+    # )
     response: str = Field(
         ...,
         description=(
@@ -167,12 +177,17 @@ class RAGResponse(BaseModel):
         ..., description="Whether answer was generated from provided context"
     )
 import uuid
-
+# from app.utils.celery_app import filter_sources_by_citation
 
 
 # class RequestModel(BaseModel):
 #     selected: OptionEnum
+from rq import Queue
+from redis import Redis
+import time
 
+redis_conn = Redis()
+q = Queue(connection=redis_conn)
 def extract_list_of_user_threads(s:UserThreads)->Dict:
     return {"id":s.id}
 
@@ -273,66 +288,80 @@ from app.Rag.TexttoPdf import text_to_pdf_bytes
      
 #      docs=db.query(DocChunk).filter(DocChunk.org_id==current_user.organization_id,DocChunk.doc_id==doc_id)
 #      return [u.content for u in docs]
-def _get_doc_by_id(db:Session,current_user:UserModel,doc_id:int):
+
+# def _get_doc_by_id(db,org_id,doc_id):
      
-     docs=db.query(OrgDocument).filter(OrgDocument.org_id==current_user.organization_id,OrgDocument.id==doc_id)
-     return [u.file_bytes for u in docs]
-def filter_sources_by_citation(db,current_user,citations, sources):
-    # 1. Extract all filenames mentioned after "citation"
-    # Example fragment: "citation1: virat kohli 4.pdf"
-    # cited_files = re.findall(r"([\w\s\-()]+\.(?:pdf|PDF))", response_text)
+#      docs=db.query(OrgDocument).filter(OrgDocument.org_id==org_id,OrgDocument.id==doc_id)
+#      return [u.file_bytes for u in docs]
 
-    # Normalize filenames
-    cited_files = [f.strip() for f in citations]
-    print(cited_files)
-    result = {}
+from app.database import SessionLocal
+def hello(a,b):
+    return a+b
 
-    # 2. Filter sources matching the cited filenames
-    for src in sources:
-        # print(src.metadata['filename'].lower())
-        filename = src.metadata.get('filename')
+from app.utils.celery_app import filter_sources_by_citation,celery_app
+from celery.result import AsyncResult
+# def filter_sources_by_citation(citations,org_id, sources):
+#     # 1. Extract all filenames mentioned after "citation"
+#     # Example fragment: "citation1: virat kohli 4.pdf"
+#     # cited_files = re.findall(r"([\w\s\-()]+\.(?:pdf|PDF))", response_text)
+
+#     # Normalize filenames
+#     db = SessionLocal()
+#     # current_user = get_current_active_user()
+#     cited_files = [f.strip() for f in citations]
+#     print(cited_files)
+#     result = {}
+
+#     # 2. Filter sources matching the cited filenames
+#     for src in sources:
+#         # print(src.metadata['filename'].lower())
+        
+#         filename = src['metadata'].get('filename')
 
 
-        if filename in cited_files:
-            doc_id = src.metadata["doc_id"]
-            page_content = src.page_content
-            print("doc_id",doc_id)
-            if doc_id not in result:
-                 result[doc_id] = {
-                    "filename": filename,
-                    "chunks": [],
-                    "link":None
-                }
+#         if filename in cited_files:
+#             doc_id = src['metadata']["doc_id"]
+#             page_content = src['page_content']
+#             print("doc_id",doc_id)
+#             if doc_id not in result:
+#                  result[doc_id] = {
+#                     "filename": filename,
+#                     "chunks": [],
+#                     "link":None
+#                 }
 
-            # Append page content to dict
-            result[doc_id]["chunks"].append(page_content)
-    # print(result)
-    for doc_id,items in result.items():
+#             # Append page content to dict
+#             result[doc_id]["chunks"].append(page_content)
+#     # print(result)
+
+#     output=[]
+#     for doc_id,items in result.items():
             
-            my_bytes=_get_doc_by_id(db,current_user,doc_id)
-            # docs=_get_doc_by_id(db,current_user,doc_id)
-            # full_doc=""
-            # for doc in docs:
-            #      print("doc",doc)
+#             my_bytes=_get_doc_by_id(db=db,org_id=org_id,doc_id=doc_id)
+#             # docs=_get_doc_by_id(db,current_user,doc_id)
+#             # full_doc=""
+#             # for doc in docs:
+#             #      print("doc",doc)
                  
-            #      full_doc+=doc
-            #full_doc=''.join(docs.page_content)
-            # print("my docs",docs)
-            # my_bytes=text_to_pdf_bytes(full_doc)
-            # print(my_bytes)
-            my_bytes=base64.b64decode(my_bytes[0])
-            obj=HighlightText()
-            my_bytes=obj.highlight_text(my_bytes,chunks=items['chunks'])
-            # with open('my_pdf.pdf',mode='wb') as f:
-            #       f.write(my_bytes)
-            # my_bytes=base64.b64encode(my_bytes).decode()
-            response=upload_pdf_to_github(file_name=items['filename'],owner="rahulkumarcollectcent",token="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",folder='uploads',repo='pdf-viewer',pdf_bytes=my_bytes)
-            # print(response)
-
-            result[doc_id]['link']=response['link']
-            # print(my_bytes)
-    # print("result",result)
-    return json.dumps(result)
+#             #      full_doc+=doc
+#             #full_doc=''.join(docs.page_content)
+#             # print("my docs",docs)
+#             # my_bytes=text_to_pdf_bytes(full_doc)
+#             # print(my_bytes)
+#             my_bytes=base64.b64decode(my_bytes[0])
+#             obj=HighlightText()
+#             my_bytes=obj.highlight_text(my_bytes,chunks=items['chunks'])
+#             # with open('my_pdf.pdf',mode='wb') as f:
+#             #       f.write(my_bytes)
+#             # my_bytes=base64.b64encode(my_bytes).decode()
+#             response=upload_pdf_to_github(file_name=items['filename'],owner="rahulkumarcollectcent",token="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",folder='uploads',repo='pdf-viewer',pdf_bytes=my_bytes)
+#             # print(response)
+            
+#             result[doc_id]['link']=response['link']
+#             output.append({"filename":result[doc_id]['filename'],"link":result[doc_id]['link'],"doc_id":doc_id})
+#             # print(my_bytes)
+#     # print("result",result)
+#     return output
 
 def create_link_for_citation(db, current_user, citations, sources):
     """
@@ -359,11 +388,11 @@ def create_link_for_citation(db, current_user, citations, sources):
 
     # Collect chunks for all cited files
     for src in sources:
-        filename = src.metadata.get("filename")
+        filename = src['metadata'].get("filename")
         if filename in file_chunks:
             file_chunks[filename].append({
-                "doc_id": src.metadata["doc_id"],
-                "content": src.page_content
+                "doc_id": src['metadata']["doc_id"],
+                "content": src['page_content']
             })
 
     final_output = []
@@ -480,6 +509,36 @@ async def stream_query(websocket:WebSocket, db: Session = Depends(get_db),curren
             #        await websocket.send_text(json.dumps({"data":metadata,"extra":"metadata"}))
     await websocket.close()
 import sys
+from langchain_core.documents import Document
+def document_to_dict(doc: Document) -> dict:
+    return {
+        "page_content": doc.page_content,
+        "metadata": doc.metadata or {}
+    }
+def dict_to_document(data: dict) -> Document:
+    return Document(
+        page_content=data["page_content"],
+        metadata=data.get("metadata", {})
+    )
+
+
+def documents_to_dicts(docs: list[Document]) -> list[dict]:
+    return [document_to_dict(doc) for doc in docs]
+
+
+
+@router.post("/get_citated_link")
+def cited(job_id):
+    job=AsyncResult(job_id,app=celery_app)
+    print(job)
+    print(job.result)
+  
+    return {
+        "id": job_id,
+        "status": job.status,
+        "result": job.result,
+        
+    }
 @router.post("/ask", summary="Ask a question over allowed departments")
 def ask(
 
@@ -522,19 +581,24 @@ def ask(
     
              answer=chatbot.invoke({"messages":data.q,"context":docs_list},config=config)
 
-    e=time.monotonic()
+    
     siz=sys.getsizeof(rvm)
     # print("chunks",docs_list)
     # output=answer['messages'][-1].content
     output=json.loads(answer['messages'][-1].content)
-
-    print("output",output)
+    e=time.monotonic()
+    print("response time",e-s)
+    # print("output",output)
     s1=time.monotonic()
-    # bt=BackgroundTasks()
-    # links=filter_sources_by_citation(db,current_user,citations=output['citation'],sources=docs_list)
-    # print("links",links)
+    serialize_doc_list=documents_to_dicts(docs_list)
+    # my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.organization_id,sources=serialize_doc_list)
+    # print(my_link)
+    links=filter_sources_by_citation.delay(citations=output['citation'],org_id=current_user.organization_id,sources=serialize_doc_list)
+    # links=q.enqueue(filter_sources_by_citation,citations=output['citation'],org_id=current_user.organization_id,sources=serialize_doc_list)
+    # links=q.enqueue(hello,2,3)
+    print("links",links.id)
     #bt.add_task(create_link_for_citation,db,current_user,citations=output['citation'],sources=docs_list)
-
+    print("time1",time.monotonic()-s1)
 
     if output['is_context_availale']=='True':
          
@@ -544,10 +608,12 @@ def ask(
     db.add(chat_message)
     db.commit()
     
-    cit=create_link_for_citation(db,current_user,citations=output['citation'],sources=docs_list)
-    print("time",time.monotonic()-s1)
-    print(cit)
-    return {"query_time":e-s,"response":output['response'],"html_response":output['html_response'],"citations":output['citation'],"total_token":answer['total_token'],"is_context_available":output['is_context_availale']}
+    # cit=create_link_for_citation(db,current_user,citations=output['citation'],sources=docs_list)
+    print("time2",time.monotonic()-s1)
+    print("total time",time.monotonic()-s)
+    # print(cit)
+    return {"query_time":e-s,"response":output['response'],"citations":output['citation'],"total_token":answer['total_token'],"source":docs_list}
+    # return {"query_time":e-s,"response":output['response'],"html_response":output['html_response'],"citations":output['citation'],"total_token":answer['total_token'],"is_context_available":output['is_context_availale']}
     # return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list,"size":siz}
 
 

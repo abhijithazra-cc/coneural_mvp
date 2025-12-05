@@ -34,6 +34,7 @@ from io import BytesIO
 from langchain_core.documents import Document
 from app.Rag.document_loaders.PdfLoader import PdfLoader
 from app.Rag.document_loaders.DocLoader import DocLoader
+from app.Rag.DocumentManager import docManager
 def extract_full_text(pages_data):
     """
     Combine page_content from all pages into a single text string.
@@ -52,42 +53,57 @@ def extract_full_text(pages_data):
         res+=" "+item.page_content
 
     return res
-
-
-def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str]) -> str:
+import os
+def extract_text(file_bytes:  str | bytes, filename: str, mimetype: Optional[str]) -> str:
     """
     Extracts text from common file types: PDF, DOCX, TXT.
     Falls back to UTF-8 decode if extractors fail.
     """
-    name = (filename or "").lower()
-    mt = (mimetype or "").lower()
-    docs=[]
-    try:
-        # PDF
-        if name.endswith(".pdf") or "pdf" in mt:
-            try:
-                loader=PdfLoader()
-                loader.load_document(file=file_bytes,filename=filename)
-                docs=loader.get_document()
-                text=loader.get_full_content()
-                return text,docs
-            except Exception:
-                    pass
+    ext = os.path.splitext(filename)[1].lower()
+    # print(ext)
+    loader=docManager.get_doc_loader(extension=ext)
 
-        # DOCX
-        elif name.endswith(".docx") or "officedocument.wordprocessingml.document" in mt:
-            try:
-                loader=DocLoader()
-                loader.load_document(file=file_bytes,filename=filename)
-                docs=loader.get_document()
-                text=loader.get_full_content()
-                return text,docs
-            except Exception:
-                pass
+    loader.load_document(file=file_bytes,filename=filename)
 
-        # Plain text-like
-        return file_bytes.decode("utf-8", errors="ignore")
+    docs=loader.get_document()
+    text=loader.get_full_content()
 
-    except Exception:
-        return file_bytes.decode("utf-8", errors="ignore")
+    return text,docs
+
+# def extract_text(file_bytes: bytes, filename: str, mimetype: Optional[str]) -> str:
+#     """
+#     Extracts text from common file types: PDF, DOCX, TXT.
+#     Falls back to UTF-8 decode if extractors fail.
+#     """
+#     name = (filename or "").lower()
+#     mt = (mimetype or "").lower()
+#     docs=[]
+#     try:
+#         # PDF
+#         if name.endswith(".pdf") or "pdf" in mt:
+#             try:
+#                 loader=PdfLoader()
+#                 loader.load_document(file=file_bytes,filename=filename)
+#                 docs=loader.get_document()
+#                 text=loader.get_full_content()
+#                 return text,docs
+#             except Exception:
+#                     pass
+
+#         # DOCX
+#         elif name.endswith(".docx") or "officedocument.wordprocessingml.document" in mt:
+#             try:
+#                 loader=DocLoader()
+#                 loader.load_document(file=file_bytes,filename=filename)
+#                 docs=loader.get_document()
+#                 text=loader.get_full_content()
+#                 return text,docs
+#             except Exception:
+#                 pass
+
+#         # Plain text-like
+#         return file_bytes.decode("utf-8", errors="ignore")
+
+#     except Exception:
+#         return file_bytes.decode("utf-8", errors="ignore")
 

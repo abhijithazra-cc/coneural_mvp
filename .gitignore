@@ -1,4 +1,7 @@
 *.env
 *.pyc
-./API_Creation_Backend
-./Rag
+API_Creation_Backend/
+Rag/
+env/
+
+new_code/vectorstores/*
