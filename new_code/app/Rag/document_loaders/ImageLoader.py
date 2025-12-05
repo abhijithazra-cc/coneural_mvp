@@ -1,6 +1,6 @@
 import img2pdf
 from langchain_community.document_loaders import PyMuPDFLoader
-from Rag.abstractions.Idocloader import Idocloader
+from app.Rag.abstractions.Idocloader import Idocloader
 import fitz  # PyMuPDF (best)
 from io import BytesIO
 from langchain_core.documents import Document
@@ -11,9 +11,7 @@ import pandas as pd
 # import easyocr
 import io
 from PIL import Image
-from Rag.OpenaiModel import OpenaiModel
-# reader = easyocr.Reader(["en"])
-from langchain_core.messages import HumanMessage
+
 import base64
 import fitz
 import pytesseract
@@ -22,8 +20,9 @@ import io
 
 
 # IMPORTANT (Windows): Set path to tesseract.exe
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-
+# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+#for linux
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 def encode_image(image_bytes: bytes):
 
@@ -51,14 +50,14 @@ class ImageLoader(Idocloader):
             myfile = img2pdf.convert(file)
             with open('temp.pdf', 'wb') as f:
                 f.write(myfile)
-            response = self.ocr(file, filename)
+            response = self.ocr(file)
             docs.append(Document(page_content=response, metadata={
                         "pages":  1, "filename": filename}))
 
             self.documents = docs
             return docs
 
-    def ocr(image_bytes: bytes):
+    def ocr(self,image_bytes: bytes):
            image = Image.open(io.BytesIO(image_bytes))
 
            # OCR extraction

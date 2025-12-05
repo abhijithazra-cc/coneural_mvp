@@ -1,5 +1,5 @@
 from langchain_community.document_loaders import PyMuPDFLoader
-from Rag.abstractions.Idocloader import Idocloader
+from app.Rag.abstractions.Idocloader import Idocloader
 import fitz  # PyMuPDF (best)
 from io import BytesIO
 from langchain_core.documents import Document

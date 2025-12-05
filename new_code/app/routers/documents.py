@@ -35,6 +35,10 @@ MAX_FILE_BYTES = 5 * 1024 * 1024  # 5 MB
 import time
 import base64
 
+from app.utils.celery_app import celery_app
+
+
+from app.Rag.utils import ALLOWED_EXTENSIONS,validate_upload_file,MIME_MAP
 @router.post(
     "/",
     status_code=status.HTTP_201_CREATED,
@@ -65,6 +69,7 @@ async def upload_org_document(
         * create FAISS HNSW index for (org_id, suborg_id) via `add_vectors(...)`
     """
     s=time.monotonic()
+    # validate_upload_file(file=file)
     # 1) Suborg must belong to org
     sub = (
         db.query(Suborganization)
@@ -127,6 +132,7 @@ async def upload_org_document(
         #     filename=file.filename,
         #     mime_type=file.content_type or "",
         # )
+        print("control at 135")
         text,docs = extract_text(
             payload,
             filename=file.filename,
@@ -139,7 +145,7 @@ async def upload_org_document(
 
     # 6) Chunk text
 
-    chunks = chunk_text(docs=docs, max_tokens=600, overlap=120)
+    chunks = chunk_text(docs=docs, max_tokens=512, overlap=120)
     # print("chunks",chunks)
     if not chunks:
         raise HTTPException(status_code=400, detail="No text content in file")

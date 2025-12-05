@@ -22,9 +22,9 @@ import io
 
 
 # IMPORTANT (Windows): Set path to tesseract.exe
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 def encode_image(image_bytes: bytes):
 
     return base64.b64encode(image_bytes).decode("utf-8")
@@ -47,18 +47,19 @@ class ImageLoader(Idocloader):
             return docs
 
         else:
+            print("bytes",type(file))
             docs = []
-            myfile = img2pdf.convert(file)
-            with open('temp.pdf', 'wb') as f:
-                f.write(myfile)
-            response = self.ocr(file, filename)
+            # myfile = img2pdf.convert(file)
+            # with open('temp.pdf', 'wb') as f:
+            #     f.write(myfile)
+            response = self.ocr(file)
             docs.append(Document(page_content=response, metadata={
                         "pages":  1, "filename": filename}))
 
             self.documents = docs
             return docs
 
-    def ocr(image_bytes: bytes):
+    def ocr(self,image_bytes: bytes):
            image = Image.open(io.BytesIO(image_bytes))
 
            # OCR extraction

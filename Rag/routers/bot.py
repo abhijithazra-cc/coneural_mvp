@@ -28,9 +28,9 @@ router = APIRouter(prefix="/bot", tags=["ChatBot"])
 
 embeddings=OpenAIEmbeddings(api_key=os.getenv('OPENAI_API_KEY'),model='text-embedding-3-small')
 
-loader=PdfLoader()
+# loader=PdfLoader()
 # loader=CsvLoader()
-# loader=ImageLoader()
+loader=ImageLoader()
 # loader=PptLoader()
 splitter=CharacterSplitter()
 vectorStore=FaissVectorstore(embeddings=embeddings)
@@ -119,9 +119,9 @@ async def upload_file(file: UploadFile = File(...)):
     content = await file.read()
     print("req came")
     # Optionally, save it to disk
-    with open(f"{file.filename}", "wb") as f:
-        f.write(content)
-    file_path=os.path.abspath(file.filename)
+    # with open(f"{file.filename}", "wb") as f:
+    #     f.write(content)
+    # file_path=os.path.abspath(file.filename)
     loader.load_document(file=content,filename=file.filename)
     docs=loader.get_document()
     # print(docs)
