@@ -3,5 +3,5 @@
 API_Creation_Backends/*
 Rags/*
 env/
-
+new_code/faiss_index/
 ./app.py
