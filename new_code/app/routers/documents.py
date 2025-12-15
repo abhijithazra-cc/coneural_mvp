@@ -36,9 +36,41 @@ import time
 import base64
 
 from app.utils.celery_app import celery_app
-
-
+import pickle
+from difflib import SequenceMatcher,context_diff
+from app.Rag.CompareDoc import CompareDoc
 from app.Rag.utils import ALLOWED_EXTENSIONS,validate_upload_file,MIME_MAP
+
+def _check_duplicate(db: Session, org_id: int, suborg_id: int, new_text: str, threshold: float = 0.9) -> Optional[OrgDocument]:
+    """
+    Check for duplicate documents in the database based on text similarity.
+
+    Args:
+        db (Session): Database session.
+        org_id (int): Organization ID.
+        suborg_id (int): Suborganization ID.
+        new_text (str): Text of the new document to compare.
+        threshold (float): Similarity threshold to consider as duplicate.
+
+    Returns:
+        Optional[OrgDocument]: The duplicate document if found, else None.
+    """
+    existing_docs = db.query(OrgDocument).filter(
+        OrgDocument.org_id == org_id,
+        OrgDocument.suborg_id == suborg_id
+    ).all()
+
+    compdoc=CompareDoc()    
+    new_minhash = compdoc.create_minhash(new_text)
+    for doc in existing_docs:
+        existing_minhash = pickle.loads(doc.hash_bytes)
+        similarity = new_minhash.jaccard(existing_minhash)
+        print(f"Comparing with Doc ID {doc.id}: Similarity = {similarity}")
+        if similarity >= threshold:
+            return doc  # Duplicate found
+
+    return None  # No duplicates found
+
 @router.post(
     "/",
     status_code=status.HTTP_201_CREATED,
@@ -71,6 +103,7 @@ async def upload_org_document(
     s=time.monotonic()
     # validate_upload_file(file=file)
     # 1) Suborg must belong to org
+
     sub = (
         db.query(Suborganization)
         .filter(
@@ -132,14 +165,24 @@ async def upload_org_document(
         #     filename=file.filename,
         #     mime_type=file.content_type or "",
         # )
-        print("control at 135")
+        
         text,docs = extract_text(
             payload,
             filename=file.filename,
             mimetype=file.content_type or "",
             
         )
-        
+        new_text=text.lower()
+        duplicate=_check_duplicate(db=db,org_id=org_id,suborg_id=suborg_id,new_text=new_text,threshold=0.8)
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Duplicate document detected: {duplicate.title} (ID: {duplicate.id})",
+            )
+        compdoc=CompareDoc()
+        m= compdoc.create_minhash(text)
+        doc_hash=pickle.dumps(m)
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Cannot read file: {e}")
 
@@ -149,8 +192,16 @@ async def upload_org_document(
     # print("chunks",chunks)
     if not chunks:
         raise HTTPException(status_code=400, detail="No text content in file")
-
+    
     # 7) Create document row
+    # vectorStoreorg=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}")
+    # is_similar=vectorStoreorg.is_similar_document(chunks=chunks)
+    # print("is_similar",is_similar)
+    # if is_similar:
+    #     raise HTTPException(
+    #         status_code=409,
+    #         detail=f"Duplicate document detected (similarity score: {is_similar['score']:.2f})",
+    #     )
     doc_bytes=base64.b64encode(payload)
     doc = OrgDocument(
         org_id=org_id,
@@ -160,15 +211,20 @@ async def upload_org_document(
         filename=file.filename,
         mime_type=file.content_type or "application/octet-stream",
         size_bytes=len(payload),
-        file_bytes=doc_bytes
+        file_bytes=doc_bytes,
+        hash_bytes=doc_hash
 
     )
     db.add(doc)
     db.flush()  # doc.id becomes available
     # await session.flush()  
+    
 
-    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{org_id}\dept\{suborg_id}")
+
+
+    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{suborg_id}")
     vectorStore.add_documents(documents=chunks,doc_id=doc.id)
+    # vectorStoreorg.add_documents(documents=chunks,doc_id=doc.id)
     # 8) Persist chunks in SQL
     db.add_all(
         [

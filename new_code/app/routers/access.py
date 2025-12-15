@@ -270,6 +270,7 @@ class AccessGrant(BaseModel):
     can_read: bool = True
     can_upload: bool = False
     is_author: bool = False
+    is_dept_admin: bool = False
     neural_cap: int | None = Field(default=None, description="Optional token/usage cap")
 
 
@@ -512,13 +513,15 @@ def grant_access(
     can_read = bool(payload.can_read or payload.can_upload or payload.is_author)
     can_upload = bool(payload.can_upload or payload.is_author)
     is_author = bool(payload.is_author)
-
+    # is_dept_admin=bool(payload.is_dept_admin)
+    # if is_dept_admin:
+    #     _ensure_org_admin(current_user, payload.org_id)
     access = (
         db.query(UserDomainAccess)
         .filter(
             UserDomainAccess.org_id == payload.org_id,
             UserDomainAccess.suborg_id == payload.suborg_id,
-            UserDomainAccess.user_id == payload.user_id,
+            UserDomainAccess.user_id == payload.user_id
         )
         .first()
     )
@@ -531,6 +534,7 @@ def grant_access(
             can_read=can_read,
             can_upload=can_upload,
             is_author=is_author,
+        
         )
         if hasattr(access, "neural_cap") and payload.neural_cap is not None:
             access.neural_cap = payload.neural_cap
@@ -539,6 +543,7 @@ def grant_access(
         access.can_read = can_read
         access.can_upload = can_upload
         access.is_author = is_author
+
         if hasattr(access, "neural_cap") and payload.neural_cap is not None:
             access.neural_cap = payload.neural_cap
 

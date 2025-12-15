@@ -1,19 +1,14 @@
 import img2pdf
-from langchain_community.document_loaders import PyMuPDFLoader
+
 from app.Rag.abstractions.Idocloader import Idocloader
-import fitz  # PyMuPDF (best)
-from io import BytesIO
+
 from langchain_core.documents import Document
-from typing import Optional
-import docx
-from io import BytesIO
-import pandas as pd
-# import easyocr
+
 import io
 from PIL import Image
 
 import base64
-import fitz
+
 import pytesseract
 from PIL import Image
 import io
@@ -74,5 +69,4 @@ class ImageLoader(Idocloader):
                 res += " "+item.page_content
 
             return res
-# file_path = "./example_data/layout-parser-paper.pdf"
-# loader = PyMuPDFLoader(file_path)
+

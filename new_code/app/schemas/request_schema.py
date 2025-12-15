@@ -9,17 +9,19 @@ class OptionEnum(str, Enum):
     opt2 = 2
     opt3 = 3
 class AskRequest(BaseModel):
-    selected:OptionEnum
+
     org_id: int
     user_id: int
     q: str
     top_k:int
-    stream: Optional[bool] = True
+
+
+
+
 class AskRequestOnDocument(BaseModel):
-    selected:OptionEnum
+ 
     doc_id:list[int]
     org_id: int
-    user_id: int
     q: str
     top_k:int
-    stream: Optional[bool] = True
+

@@ -39,6 +39,7 @@ class OrgDocument(Base):
     mime_type = Column(String(128))
     size_bytes = Column(Integer)
     file_bytes=Column(LONGBLOB)
+    hash_bytes=Column(LargeBinary)
     chunks = relationship("DocChunk", back_populates="document", cascade="all, delete-orphan")
     created_at = Column(DateTime, server_default=func.now())
 

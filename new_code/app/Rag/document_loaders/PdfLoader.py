@@ -1,9 +1,9 @@
 from langchain_community.document_loaders import PyMuPDFLoader
 from app.Rag.abstractions.Idocloader import Idocloader
 import fitz  # PyMuPDF (best)
-from io import BytesIO
+
 from langchain_core.documents import Document
-from typing import Optional
+
 import fitz
 import pytesseract
 from PIL import Image
@@ -12,6 +12,7 @@ import io
 
 # IMPORTANT (Windows): Set path to tesseract.exe
 # pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+#for linux
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 class PdfLoader(Idocloader):
@@ -89,5 +90,3 @@ class PdfLoader(Idocloader):
             res += " " + item.page_content
         return res
 
-# file_path = "./example_data/layout-parser-paper.pdf"
-# loader = PyMuPDFLoader(file_path)

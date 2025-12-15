@@ -15,7 +15,9 @@ celery_app = Celery(
 def _get_doc_by_id(db,org_id,doc_id):
      
      docs=db.query(OrgDocument).filter(OrgDocument.org_id==org_id,OrgDocument.id==doc_id)
-     return [u.file_bytes for u in docs]
+     for u in docs:
+          print("type u",type(u.file_bytes))
+          return u.file_bytes 
 
 
 @celery_app.task
@@ -63,7 +65,7 @@ def filter_sources_by_citation(citations,org_id, sources):
     output=[]
     for doc_id,items in result.items():
             
-            my_bytes=_get_doc_by_id(db=db,org_id=org_id,doc_id=doc_id)
+            my_doc_bytes=_get_doc_by_id(db=db,org_id=org_id,doc_id=doc_id)
             # docs=_get_doc_by_id(db,current_user,doc_id)
             # full_doc=""
             # for doc in docs:
@@ -74,7 +76,9 @@ def filter_sources_by_citation(citations,org_id, sources):
             # print("my docs",docs)
             # my_bytes=text_to_pdf_bytes(full_doc)
             # print(my_bytes)
-            my_bytes=base64.b64decode(my_bytes[0])
+            # print("my_doc_bytes",my_doc_bytes)
+            my_bytes=base64.b64decode(my_doc_bytes)
+
             obj=HighlightText()
             my_bytes=obj.highlight_text(my_bytes,chunks=items['chunks'])
             # with open('my_pdf.pdf',mode='wb') as f:

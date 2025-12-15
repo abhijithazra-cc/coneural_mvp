@@ -397,7 +397,7 @@ def create_org_and_admin(body: AdminSignup, db: Session = Depends(get_db)):
     org = OrganizationModel(name=body.org_name, description=body.org_name)
     db.add(org)
     db.flush()  # get org.id before commit
-    vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{org.id}")
+    vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org.id}")
     # Create admin user
     hashed = get_password_hash(body.password)
     admin = UserModel(

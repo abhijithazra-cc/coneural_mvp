@@ -29,7 +29,7 @@ def create_organization(
         db.add(org); db.commit(); db.refresh(org)
         db.flush()
         print("org_id",org.id)
-        vectorManager.create_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{org.id}")
+        vectorManager.create_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org.id}")
         return _org_public(org)
     except HTTPException:
         raise
