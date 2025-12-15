@@ -12,7 +12,7 @@ from langchain_openai.embeddings import OpenAIEmbeddings
 # from FaissVectorstore import FaissVectorstore
 # from Retriever import Retriever
 # from OpenaiModel import OpenaiModel
-import time
+# import time
 import Rag.routers
 from Rag.routers.bot import router as bot_router
 # from SemanticSplitter import SemanticSplitter
