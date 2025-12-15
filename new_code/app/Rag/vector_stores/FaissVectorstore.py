@@ -2,6 +2,7 @@ from app.Rag.abstractions.IVectorstore import IVectorstore
 from langchain_community.vectorstores import FAISS
 import os
 from datetime import datetime
+from app.Rag.utils import embeddings
 class FaissVectorstore(IVectorstore):
      # def __init__(self):
      #      self.vectorstre=None
@@ -61,6 +62,42 @@ class FaissVectorstore(IVectorstore):
             self.vectorstore = store
     def get_document_ids(self):
         return self.doc_id_list
+    def is_similar_document(self, chunks) -> bool:
+        store = self._load_or_create_store()
+        if not chunks:
+            return False
+        # embeddings.embed_documents()
+        # Search for similar documents
+        # store.similarity_search_with_score_by_vector
+        full_doc = "\n".join([c.page_content for c in chunks])
+        print("full_doc",type([full_doc]))
+        
+        doc_text = embeddings.embed_documents(texts=[full_doc],chunk_size=512)
+        print("doc_text",type(doc_text[0]),len(doc_text[0]))
+        
+        matches = store.similarity_search_with_score(
+           query=full_doc, k=1
+           )
+        
+        # print("matches",matches)
+        
+        
+
+# 2. If matches exist → check threshold
+        for m, score in matches:
+           score= 1 / (1 + score)  # simple normalization
+           print("similarity score",score)
+    # score = relevance (similarity, not distance) if using similarity_search_with_relevance_scores
+    # If you want raw distance: use similarity_search_by_vector
+           if score > 0.85:  # similarity threshold
+              return {
+            "status": "duplicate",
+            "score": score,
+          
+                }
+
+
+           return False
     # ---------- Fetch chunks for one document ----------
     def get_chunks_by_doc_id(self, doc_id: str):
         store = self._load_or_create_store()

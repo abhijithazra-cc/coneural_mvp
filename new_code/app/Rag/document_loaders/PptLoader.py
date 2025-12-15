@@ -1,12 +1,11 @@
-from langchain_community.document_loaders import PyMuPDFLoader
+
 from app.Rag.abstractions.Idocloader import Idocloader
-import fitz  # PyMuPDF (best)
+
 from io import BytesIO
 from langchain_core.documents import Document
-from typing import Optional
-import docx
+
 from io import BytesIO
-import pandas as pd
+
 from pptx import Presentation
 from io import BytesIO
 

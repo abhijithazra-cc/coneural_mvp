@@ -28,7 +28,7 @@ def create_suborganization(suborganization: SuborganizationCreate, db: Session =
 
         db.add(s); db.commit(); db.refresh(s)
         db.flush()
-        vectorManager.create_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\\{suborganization.organization_id}\\dept\\{s.id}")
+        vectorManager.create_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{suborganization.organization_id}/dept/{s.id}")
         return _sub_public(s)
     except HTTPException:
         raise

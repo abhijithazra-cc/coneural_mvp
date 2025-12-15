@@ -6,6 +6,7 @@ class SuborganizationCreate(BaseModel):
     description: Optional[str] = None
     organization_id: int
 
+
 class SuborganizationUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None

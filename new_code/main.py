@@ -29,7 +29,7 @@ class UserUpdate(schemas.BaseUserUpdate):
 
 # 🔹 Create the single FastAPI app
 app = FastAPI(
-    title="Coneural Backend",
+    title="Coneural Backend v2",
     version="1.0.0",
     description="AI-powered SaaS backend for orgs, departments, and document ingestion",
 )
@@ -56,6 +56,7 @@ from app.routers.access import router as access_router        # /access
 from app.routers.qa import router as qa_router
 from app.routers.onboarding import router as onboardig_router
 from app.routers.unanswered_qa import router as unanswered_router
+from app.routers.searchdoc import router as searchdoc_router
 # 🔹 Attach routers
 app.include_router(auth_router)
 app.include_router(org_router)
@@ -66,6 +67,7 @@ app.include_router(access_router)
 app.include_router(qa_router)
 app.include_router(onboardig_router)
 app.include_router(unanswered_router)
+app.include_router(searchdoc_router)
 
 # 🔹 Health / root endpoints
 @app.get("/")

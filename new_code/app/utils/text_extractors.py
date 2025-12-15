@@ -34,7 +34,8 @@ from io import BytesIO
 from langchain_core.documents import Document
 from app.Rag.document_loaders.PdfLoader import PdfLoader
 from app.Rag.document_loaders.DocLoader import DocLoader
-from app.Rag.DocumentManager import docManager
+from app.Rag.DocumentManager import DocumentManager
+docManager=DocumentManager()
 def extract_full_text(pages_data):
     """
     Combine page_content from all pages into a single text string.

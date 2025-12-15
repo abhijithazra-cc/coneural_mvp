@@ -6,6 +6,7 @@ from typing import List
 from pypdf import PdfReader
 import docx  # python-docx
 from app.Rag.text_splitters.CharacterSplitter import CharacterSplitter
+from app.Rag.text_splitters.SemanticSplitter import SemanticSplitter
 from app.Rag.utils import embeddings 
 def extract_text_from_file(
     f: io.BytesIO,
@@ -69,6 +70,6 @@ def extract_text_from_file(
 
 
 def chunk_text(docs, max_tokens: int = 1200, overlap: int = 150):
-    splitter=CharacterSplitter()
+    splitter=SemanticSplitter(embeddings=embeddings)
     chunks=splitter.split_documents(docs=docs,chunk_size=max_tokens,chunk_overlap=overlap)
     return chunks
