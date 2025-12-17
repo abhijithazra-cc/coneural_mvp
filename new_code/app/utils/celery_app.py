@@ -12,9 +12,9 @@ celery_app = Celery(
     broker="redis://localhost:6379/0",
     backend="redis://localhost:6379/0",
 )
-def _get_doc_by_id(db,org_id,doc_id):
+def _get_doc_by_id(db,org_id,document_id):
      
-     docs=db.query(OrgDocument).filter(OrgDocument.org_id==org_id,OrgDocument.id==doc_id)
+     docs=db.query(OrgDocument).filter(OrgDocument.org_id==org_id,OrgDocument.id==document_id)
      for u in docs:
           print("type u",type(u.file_bytes))
           return u.file_bytes 
@@ -48,25 +48,25 @@ def filter_sources_by_citation(citations,org_id, sources):
 
 
         if filename in cited_files:
-            doc_id = src['metadata']["doc_id"]
+            document_id = src['metadata']["document_id"]
             page_content = src['page_content']
-            print("doc_id",doc_id)
-            if doc_id not in result:
-                 result[doc_id] = {
+            print("document_id",document_id)
+            if document_id not in result:
+                 result[document_id] = {
                     "filename": filename,
                     "chunks": [],
                     "link":None
                 }
 
             # Append page content to dict
-            result[doc_id]["chunks"].append(page_content)
+            result[document_id]["chunks"].append(page_content)
     # print(result)
 
     output=[]
-    for doc_id,items in result.items():
+    for document_id,items in result.items():
             
-            my_doc_bytes=_get_doc_by_id(db=db,org_id=org_id,doc_id=doc_id)
-            # docs=_get_doc_by_id(db,current_user,doc_id)
+            my_doc_bytes=_get_doc_by_id(db=db,org_id=org_id,document_id=document_id)
+            # docs=_get_doc_by_id(db,current_user,document_id)
             # full_doc=""
             # for doc in docs:
             #      print("doc",doc)
@@ -87,8 +87,8 @@ def filter_sources_by_citation(citations,org_id, sources):
             response=upload_pdf_to_github(file_name=items['filename'],owner="rahulkumarcollectcent",token="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",folder='uploads',repo='pdf-viewer',pdf_bytes=my_bytes)
             # print(response)
             
-            result[doc_id]['link']=response['link']
-            output.append({"filename":result[doc_id]['filename'],"link":result[doc_id]['link'],"doc_id":doc_id})
+            result[document_id]['link']=response['link']
+            output.append({"filename":result[document_id]['filename'],"link":result[document_id]['link'],"document_id":document_id})
             # print(my_bytes)
     # print("result",result)
     return output

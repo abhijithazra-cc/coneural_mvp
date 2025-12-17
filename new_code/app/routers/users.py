@@ -7,7 +7,8 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.user_model import User as UserModel, UserType
+from app.models.user_model import User as UserModel
+from app.models.user_access_department_model import UserType,UserAccessDepartment
 from app.models.organization_model import Organization as OrganizationModel
 from app.services.auth import (
     get_current_active_user,
@@ -40,7 +41,7 @@ class UserCreate(BaseModel):
         max_length=72,
         description="8–72 characters (bcrypt ≤72 bytes)",
     )
-    organization_id: int  # must equal admin's org
+    org_id: int  # must equal admin's org
     # NOTE: user_type is intentionally NOT accepted here to prevent privilege escalation.
 
     @field_validator("password")
@@ -69,19 +70,23 @@ class UserPublic(BaseModel):
     id: int
     name: str
     email: EmailStr
-    user_type: str
+    
 
 
 # ─────────────────────── Helpers ───────────────────────
 
-def _require_admin_same_org(current_user: UserModel, org_id: int):
+def _require_admin_same_org(db:Session,current_user: UserModel, org_id: int):
     """
     Only ADMIN of that org can operate on users of that org.
     """
-    if current_user.user_type != UserType.ADMIN:
+    dom=db.query(UserAccessDepartment).filter(UserAccessDepartment.org_id==current_user.org_id,UserAccessDepartment.user_id==current_user.id).first()
+    if not dom: 
+        raise HTTPException(status_code=403, detail="No department access found for current user")
+    if dom.user_type != UserType.ADMIN:
         raise HTTPException(status_code=403, detail="Only org admins can perform this action")
-    if current_user.organization_id != org_id:
-        raise HTTPException(status_code=403, detail="organization_id does not match your organization")
+
+    if current_user.org_id != org_id:
+        raise HTTPException(status_code=403, detail="org_id does not match your organization")
 
 
 # ─────────────────────── Routes ───────────────────────
@@ -100,13 +105,13 @@ def create_user(
     """
     Create a new **USER** in the current admin's organization.
     - Admin-only.
-    - `organization_id` must equal admin's org.
-    - Department (suborganization) access is handled separately via `/access` APIs.
+    - `org_id` must equal admin's org.
+    - Department (Department) access is handled separately via `/access` APIs.
     """
-    _require_admin_same_org(current_user, body.organization_id)
+    _require_admin_same_org(db,current_user, body.org_id)
 
     # Organization must exist
-    org = db.query(OrganizationModel).filter(OrganizationModel.id == body.organization_id).first()
+    org = db.query(OrganizationModel).filter(OrganizationModel.id == body.org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
@@ -122,9 +127,9 @@ def create_user(
         email=body.email,
         username=body.username,
         hashed_password=hashed,
-        user_type=UserType.USER,
-        organization_id=body.organization_id,
-        # suborganization_id left as None; access per department is in user_domain_access
+   
+        org_id=body.org_id,
+        # Department_id left as None; access per department is in user_domain_access
     )
     db.add(user)
     db.commit()
@@ -134,7 +139,7 @@ def create_user(
         id=user.id,
         name=user.username,
         email=user.email,
-        user_type=user.user_type.value,
+       
     )
 
 
@@ -150,9 +155,9 @@ def list_users(
     """
     Admin-only: list all users in your organization.
     """
-    _require_admin_same_org(current_user, current_user.organization_id)
+    _require_admin_same_org(current_user, current_user.org_id)
 
-    users = db.query(UserModel).filter(UserModel.organization_id == current_user.organization_id).all()
+    users = db.query(UserModel).filter(UserModel.org_id == current_user.org_id).all()
     return [
         UserPublic(
             id=u.id,
@@ -177,13 +182,13 @@ def get_user_by_id(
     """
     Admin-only: fetch a user by id within your organization.
     """
-    _require_admin_same_org(current_user, current_user.organization_id)
+    _require_admin_same_org(current_user, current_user.org_id)
 
     user = (
         db.query(UserModel)
         .filter(
             UserModel.id == user_id,
-            UserModel.organization_id == current_user.organization_id,
+            UserModel.org_id == current_user.org_id,
         )
         .first()
     )
@@ -215,13 +220,13 @@ def update_user(
     - Change password
     (No user_type changes here; admin promotion is handled elsewhere if needed.)
     """
-    _require_admin_same_org(current_user, current_user.organization_id)
+    _require_admin_same_org(current_user, current_user.org_id)
 
     user = (
         db.query(UserModel)
         .filter(
             UserModel.id == user_id,
-            UserModel.organization_id == current_user.organization_id,
+            UserModel.org_id == current_user.org_id,
         )
         .first()
     )
@@ -285,7 +290,7 @@ def update_user(
 #     email: EmailStr
 #     username: str = Field(..., min_length=2, max_length=255)
 #     password: str = Field(..., min_length=8, max_length=72, description="8–72 characters (bcrypt ≤72 bytes)")
-#     organization_id: int  # must equal admin's org
+#     org_id: int  # must equal admin's org
 #     # NOTE: user_type is intentionally NOT accepted here to prevent privilege escalation.
 
 #     @field_validator("password")
@@ -322,8 +327,8 @@ def update_user(
 # def _require_admin_same_org(current_user: UserModel, org_id: int):
 #     if current_user.user_type != UserType.ADMIN:
 #         raise HTTPException(status_code=403, detail="Only org admins can perform this action")
-#     if current_user.organization_id != org_id:
-#         raise HTTPException(status_code=403, detail="organization_id does not match your organization")
+#     if current_user.org_id != org_id:
+#         raise HTTPException(status_code=403, detail="org_id does not match your organization")
 
 
 # # ─────────────────────── Routes ───────────────────────
@@ -332,7 +337,7 @@ def update_user(
 #     "/",
 #     response_model=UserPublic,
 #     status_code=status.HTTP_201_CREATED,
-#     summary="Create a user (org-scoped; no suborganization)"
+#     summary="Create a user (org-scoped; no Department)"
 # )
 # def create_user(
 #     body: UserCreate,
@@ -342,13 +347,13 @@ def update_user(
 #     """
 #     Create a new **USER** in the current admin's organization.
 #     - Admin-only.
-#     - `organization_id` must equal admin's org.
-#     - No suborganization here (domain access handled in /access router).
+#     - `org_id` must equal admin's org.
+#     - No Department here (domain access handled in /access router).
 #     """
-#     _require_admin_same_org(current_user, body.organization_id)
+#     _require_admin_same_org(current_user, body.org_id)
 
 #     # Organization must exist
-#     org = db.query(OrganizationModel).filter(OrganizationModel.id == body.organization_id).first()
+#     org = db.query(OrganizationModel).filter(OrganizationModel.id == body.org_id).first()
 #     if not org:
 #         raise HTTPException(status_code=404, detail="Organization not found")
 
@@ -365,8 +370,8 @@ def update_user(
 #         username=body.username,
 #         hashed_password=hashed,
 #         user_type=UserType.USER,
-#         organization_id=body.organization_id,
-#         # suborganization_id intentionally ignored/left None
+#         org_id=body.org_id,
+#         # Department_id intentionally ignored/left None
 #     )
 #     db.add(user)
 #     db.commit()
@@ -387,9 +392,9 @@ def update_user(
 #     """
 #     Admin-only: list all users in your organization.
 #     """
-#     _require_admin_same_org(current_user, current_user.organization_id)
+#     _require_admin_same_org(current_user, current_user.org_id)
 
-#     users = db.query(UserModel).filter(UserModel.organization_id == current_user.organization_id).all()
+#     users = db.query(UserModel).filter(UserModel.org_id == current_user.org_id).all()
 #     return [
 #         {"id": u.id, "name": u.username, "email": u.email, "user_type": u.user_type.value}
 #         for u in users
@@ -409,11 +414,11 @@ def update_user(
 #     """
 #     Admin-only: fetch a user by id within your organization.
 #     """
-#     _require_admin_same_org(current_user, current_user.organization_id)
+#     _require_admin_same_org(current_user, current_user.org_id)
 
 #     user = db.query(UserModel).filter(
 #         UserModel.id == user_id,
-#         UserModel.organization_id == current_user.organization_id
+#         UserModel.org_id == current_user.org_id
 #     ).first()
 #     if not user:
 #         raise HTTPException(status_code=404, detail="User not found in your organization")
@@ -438,11 +443,11 @@ def update_user(
 #     - Change password
 #     (No user_type changes here; admin promotion is handled elsewhere if needed.)
 #     """
-#     _require_admin_same_org(current_user, current_user.organization_id)
+#     _require_admin_same_org(current_user, current_user.org_id)
 
 #     user = db.query(UserModel).filter(
 #         UserModel.id == user_id,
-#         UserModel.organization_id == current_user.organization_id
+#         UserModel.org_id == current_user.org_id
 #     ).first()
 #     if not user:
 #         raise HTTPException(status_code=404, detail="User not found in your organization")

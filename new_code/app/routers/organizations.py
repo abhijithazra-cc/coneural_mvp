@@ -8,6 +8,7 @@ from app.schemas.organization_schema import OrganizationCreate, OrganizationUpda
 from app.database import get_db
 from app.Rag.VectorManager import vectorManager
 from app.Rag.utils import embeddings,BASE_DIR 
+from app.models.user_access_department_model import UserType,UserAccessDepartment
 router = APIRouter(prefix="/organizations", tags=["organizations"],
     responses={400: {"description": "Bad Request"}, 401: {"description": "Unauthorized"},
                404: {"description": "Not Found"}, 500: {"description": "Internal Server Error"}})
@@ -26,6 +27,13 @@ def create_organization(
         if existing:
             raise HTTPException(status_code=400, detail="Organization name already exists")
         org = OrganizationModel(name=organization.name, description=organization.description)
+        user_access = UserAccessDepartment(
+            org_id=org.id,
+          
+            user_id=current_user.id,
+            user_type=UserType.ADMIN
+        )
+        db.add(user_access)
         db.add(org); db.commit(); db.refresh(org)
         db.flush()
         print("org_id",org.id)
@@ -50,26 +58,38 @@ def list_organizations(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.get("/{organization_id}", status_code=status.HTTP_200_OK)
-def get_organization(organization_id: int, db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_active_user)):
-    org = db.query(OrganizationModel).filter(OrganizationModel.id == organization_id).first()
+@router.get("/{org_id}", status_code=status.HTTP_200_OK)
+def get_organization(org_id: int, db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_active_user)):
+    org = db.query(OrganizationModel).filter(OrganizationModel.id == org_id).first()
     if not org: raise HTTPException(status_code=404, detail="Organization not found")
     return _org_public(org)
 
-@router.put("/{organization_id}", status_code=status.HTTP_200_OK)
-def update_organization(organization_id: int, organization_update: OrganizationUpdate,
+@router.put("/{org_id}", status_code=status.HTTP_200_OK)
+def update_organization(org_id: int, organization_update: OrganizationUpdate,
                         db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_active_user)):
     try:
-        org = db.query(OrganizationModel).filter(OrganizationModel.id == organization_id).first()
+        org = db.query(OrganizationModel).filter(OrganizationModel.id == org_id).first()
         if not org: raise HTTPException(status_code=404, detail="Organization not found")
-        if organization_update.name and organization_update.name != org.name:
-            conflict = db.query(OrganizationModel).filter(OrganizationModel.name == organization_update.name,
-                                                          OrganizationModel.id != organization_id).first()
+        if organization_update.organization_name and organization_update.organization_name != org.name:
+            conflict = db.query(OrganizationModel).filter(OrganizationModel.name == organization_update.organization_name,
+                                                          OrganizationModel.id != org_id).first()
             if conflict: raise HTTPException(status_code=400, detail="Organization name already exists")
-            org.name = organization_update.name
+            org.name = organization_update.organization_name
         if organization_update.description is not None: org.description = organization_update.description
+        if organization_update.website_url is not None: org.website_url = organization_update.website_url   
+        if organization_update.industry is not None: org.industry = organization_update.industry
+        if organization_update.company_size is not None: org.company_size = organization_update.company_size
+        if organization_update.social_handles is not None: org.social_handles = organization_update.social_handles
         if hasattr(organization_update, "is_active") and organization_update.is_active is not None:
             org.is_active = organization_update.is_active
+        # if organization_update.name and organization_update.name != org.name:
+        #     conflict = db.query(OrganizationModel).filter(OrganizationModel.name == organization_update.name,
+        #                                                   OrganizationModel.id != org_id).first()
+        #     if conflict: raise HTTPException(status_code=400, detail="Organization name already exists")
+        #     org.name = organization_update.name
+        # if organization_update.description is not None: org.description = organization_update.description
+        # if hasattr(organization_update, "is_active") and organization_update.is_active is not None:
+        #     org.is_active = organization_update.is_active
         db.commit(); db.refresh(org)
         return _org_public(org)
     except HTTPException:
@@ -77,10 +97,10 @@ def update_organization(organization_id: int, organization_update: OrganizationU
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.delete("/{organization_id}", status_code=status.HTTP_200_OK)
-def delete_organization(organization_id: int, db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_active_user)):
+@router.delete("/{org_id}", status_code=status.HTTP_200_OK)
+def delete_organization(org_id: int, db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_active_user)):
     try:
-        org = db.query(OrganizationModel).filter(OrganizationModel.id == organization_id).first()
+        org = db.query(OrganizationModel).filter(OrganizationModel.id == org_id).first()
         if not org: raise HTTPException(status_code=404, detail="Organization not found")
         db.delete(org); db.commit()
         return {"message": "Organization deleted successfully"}

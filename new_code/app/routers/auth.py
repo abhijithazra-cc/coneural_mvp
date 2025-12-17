@@ -137,7 +137,7 @@
 #         username=username,
 #         hashed_password=hashed,
 #         user_type=UserType.ADMIN,
-#         organization_id=org.id,
+#         org_id=org.id,
 #     )
 #     db.add(admin)
 #     db.commit()
@@ -209,7 +209,7 @@
 #             username=candidate,
 #             hashed_password=get_password_hash("OAuth@" + candidate),  # dummy hashed secret
 #             user_type=UserType.ADMIN,
-#             organization_id=None,  # set later during onboarding
+#             org_id=None,  # set later during onboarding
 #         )
 #         db.add(user)
 #         db.commit()
@@ -242,7 +242,7 @@
 #             username=candidate,
 #             hashed_password=get_password_hash("OAuth@" + candidate),
 #             user_type=UserType.ADMIN,
-#             organization_id=None,
+#             org_id=None,
 #         )
 #         db.add(user)
 #         db.commit()
@@ -263,8 +263,8 @@
 #         "name": current_user.username,
 #         "email": current_user.email,
 #         "user_type": current_user.user_type.value,
-#         "organization_id": current_user.organization_id,
-#         "suborganization_id": current_user.suborganization_id,
+#         "org_id": current_user.org_id,
+#         "Department_id": current_user.Department_id,
 #     }
 
 
@@ -281,9 +281,9 @@ from pydantic import BaseModel, EmailStr, Field, validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.user_model import User as UserModel, UserType
+from app.models.user_model import User as UserModel
 from app.models.organization_model import Organization as OrganizationModel
-
+from app.models.user_access_department_model import UserType,UserAccessDepartment
 # ✅ Crypto/JWT helpers come from utils (prevents circular imports)
 from app.utils.security import (
     get_password_hash,
@@ -394,7 +394,7 @@ def create_org_and_admin(body: AdminSignup, db: Session = Depends(get_db)):
         username = body.admin_name
 
     # Create org
-    org = OrganizationModel(name=body.org_name, description=body.org_name)
+    org = OrganizationModel()
     db.add(org)
     db.flush()  # get org.id before commit
     vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org.id}")
@@ -404,18 +404,27 @@ def create_org_and_admin(body: AdminSignup, db: Session = Depends(get_db)):
         email=body.email,
         username=username,
         hashed_password=hashed,
-        user_type=UserType.ADMIN,
-        organization_id=org.id,
+ 
+        org_id=org.id,
     )
+    
     db.add(admin)
+    db.flush()
+    user_access=UserAccessDepartment(
+        user_type=UserType.ADMIN,
+        user_id=admin.id,
+        org_id=org.id,  
+    )
+    db.add(user_access)
     db.commit()
+    db.refresh(user_access)
     db.refresh(admin)
 
     token = create_access_token({"sub": admin.email}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
 
     return {
         "organization": {"id": org.id, "name": org.name, "description": org.description},
-        "user": {"id": admin.id, "name": admin.username, "email": admin.email, "user_type": admin.user_type.value},
+        "user": {"id": admin.id, "name": admin.username, "email": admin.email},
         "access_token": token,
         "token_type": "bearer",
     }
@@ -456,7 +465,7 @@ def login_for_access_token(
     return {
         "access_token": token,
         "token_type": "bearer",
-        "user": {"id": user.id, "name": user.username, "email": user.email, "user_type": user.user_type.value},
+        "user": {"id": user.id, "name": user.username, "email": user.email},
     }
 
 @router.post("/oauth/google", response_model=Token, summary="Sign in with Google Workspace")
@@ -476,7 +485,7 @@ async def login_google(body: OAuthTokenIn, db: Session = Depends(get_db)):
             username=candidate,
             hashed_password=get_password_hash("OAuth@" + candidate),  # dummy hashed secret
             user_type=UserType.ADMIN,
-            organization_id=None,  # set during onboarding
+            org_id=None,  # set during onboarding
         )
         db.add(user)
         db.commit()
@@ -508,7 +517,7 @@ async def login_microsoft(body: OAuthTokenIn, db: Session = Depends(get_db)):
             username=candidate,
             hashed_password=get_password_hash("OAuth@" + candidate),
             user_type=UserType.ADMIN,
-            organization_id=None,
+            org_id=None,
         )
         db.add(user)
         db.commit()
@@ -528,6 +537,6 @@ def read_users_me(current_user: UserModel = Depends(get_current_active_user)):
         "name": current_user.username,
         "email": current_user.email,
         "user_type": current_user.user_type.value,
-        "organization_id": current_user.organization_id,
-        "suborganization_id": current_user.suborganization_id,
+        "org_id": current_user.org_id,
+        "Department_id": current_user.Department_id,
     }

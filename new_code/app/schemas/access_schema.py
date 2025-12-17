@@ -2,7 +2,7 @@
 
 # class AccessGrant(BaseModel):
 #     org_id: int
-#     suborg_id: int
+#     dept_id: int
 #     user_id: int
 #     can_read: bool = True
 #     can_upload: bool = False
@@ -10,7 +10,7 @@
 
 # class AccessRevoke(BaseModel):
 #     org_id: int
-#     suborg_id: int
+#     dept_id: int
 #     user_id: int
 
 

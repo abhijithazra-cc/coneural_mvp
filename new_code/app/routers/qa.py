@@ -9,14 +9,14 @@ import os
 from pydantic import BaseModel,Field
 from app.database import get_db
 from app.services.auth import get_current_active_user,get_current_active_socket_user
-from app.models.user_model import User as UserModel, UserType
-from app.models.access_model import UserDomainAccess
-from app.models.suborganization_model import Suborganization as SuborganizationModel
+from app.models.user_model import User as UserModel
+from app.models.user_access_department_model import UserAccessDepartment
+from app.models.department_model import Department as DepartmentModel
 from app.models.doc_models import DocChunk                   #  from doc_models
 # from app.models.org_document_model import OrgDocument       #  from org_document_model
 from app.models.doc_models import OrgDocument,DocChunk  
 from app.utils.embeddings import embed_texts
-from app.models.user_thread_model import UserThreads
+from app.models.chat_thread_model import ChatThreads
 from fastapi.responses import StreamingResponse
 # from app.utils.faiss_manager import FaissManager
 from app.Rag.utils import embeddings,llm,BASE_DIR,retriever
@@ -25,7 +25,7 @@ from langchain_classic.retrievers.ensemble import EnsembleRetriever
 from typing import Dict, List
 from langchain_classic.text_splitter import CharacterTextSplitter
 from app.Rag.HighlightText import HighlightText
-from app.models.user_chat_model import ChatMessage
+from app.models.chat_messages_model import ChatMessage
 from app.models.doc_embedding_model import DocEmbedding
 router = APIRouter(prefix="/qa", tags=["qa"])
 # _faiss = FaissManager(dim=get_embed_dim())
@@ -38,26 +38,26 @@ import time
 redis_conn = Redis()
 
 # q = Queue(connection=redis_conn)
-def _access_public(a: UserDomainAccess) -> Dict:
+def _access_public(a: UserAccessDepartment) -> Dict:
     return {
         "id": a.id,
         "org_id": a.org_id,
-        "suborg_id": a.suborg_id,
+        "dept_id": a.dept_id,
         "user_id": a.user_id,
         "can_read": getattr(a, "can_read", True),
         "can_upload": getattr(a, "can_upload", False),
         "is_author": getattr(a, "is_author", False),
         "neural_cap": getattr(a, "neural_cap", None),
     }
-def _can_read(db: Session, user: UserModel, org_id: int, suborg_id: int) -> bool:
+def _can_read(db: Session, user: UserModel, org_id: int, dept_id: int) -> bool:
     # Org admin of same org can read everywhere in org
-    if user.user_type == UserType.ADMIN and user.organization_id == org_id:
+    if user.user_type == UserType.ADMIN and user.org_id == org_id:
         return True
     # Else must have read access on this department
-    acc = db.query(UserDomainAccess).filter(
-        UserDomainAccess.org_id == org_id,
-        UserDomainAccess.suborg_id == suborg_id,
-        UserDomainAccess.user_id == user.id
+    acc = db.query(UserAccessDepartment).filter(
+        UserAccessDepartment.org_id == org_id,
+        UserAccessDepartment.dept_id == dept_id,
+        UserAccessDepartment.user_id == user.id
     ).first()
     return bool(acc and acc.can_read)
 def list_user_access(
@@ -67,29 +67,29 @@ def list_user_access(
     
 ):
     """
-    Admin-only: list which departments (suborganizations) this user has access to
+    Admin-only: list which departments (Departments) this user has access to
     within the admin's organization.
     """
     # if current_user.user_type != UserType.ADMIN:
     #     raise HTTPException(status_code=403, detail="Only org admins can view access")
 
     # user = _ensure_user_exists(db, user_id)
-    # if user.organization_id != current_user.organization_id:
+    # if user.org_id != current_user.org_id:
     #     raise HTTPException(status_code=403, detail="User is not in your organization")
 
     rows = (
-        db.query(UserDomainAccess)
+        db.query(UserAccessDepartment)
         .join(
-            SuborganizationModel,
-            SuborganizationModel.id == UserDomainAccess.suborg_id,
+            DepartmentModel,
+            DepartmentModel.id == UserAccessDepartment.dept_id,
         )
         .filter(
-            SuborganizationModel.organization_id == org_id,
-            UserDomainAccess.user_id == user_id,
+            DepartmentModel.org_id == org_id,
+            UserAccessDepartment.user_id == user_id,
         )
         .all()
     )
-    return [_access_public(r)['suborg_id'] for r in rows]
+    return [_access_public(r)['dept_id'] for r in rows]
 def list_user_threads(
     org_id:int,
     user_id: int,
@@ -103,15 +103,15 @@ def list_user_threads(
     #     raise HTTPException(status_code=403, detail="Only org admins can view access")
 
     # user = _ensure_user_exists(db, user_id)
-    # if user.organization_id != current_user.organization_id:
+    # if user.org_id != current_user.org_id:
     #     raise HTTPException(status_code=403, detail="User is not in your organization")
 
     rows = (
-        db.query(UserThreads)
+        db.query(ChatThreads)
 
         .filter(
-            UserThreads.organization_id == org_id,
-            UserThreads.user_id == user_id,
+            ChatThreads.org_id == org_id,
+            ChatThreads.user_id == user_id,
         )
         .all()
     )
@@ -119,7 +119,7 @@ def list_user_threads(
 
 class CitationItem(BaseModel):
     file: str = Field(..., description="Name of the PDF or source file used")
-    doc_id: str = Field(..., description="Document id present in metadata with name doc_id")
+    document_id: str = Field(..., description="Document id present in metadata with name document_id")
 
 
 class HtmlItem(BaseModel):
@@ -161,7 +161,7 @@ class RAGResponse(BaseModel):
 import uuid
 
 
-def extract_list_of_user_threads(s:UserThreads)->Dict:
+def extract_list_of_user_threads(s:ChatThreads)->Dict:
     return {"id":s.id}
 
 import json
@@ -214,8 +214,8 @@ with PyMySQLSaver.from_conn_string(conn_string=os.getenv("DATABASE_URL")) as cp:
 
 def _allowed_thread_id(db,current_user,t_id):
     
-   threads=db.query(UserThreads).filter(UserThreads.organization_id==current_user.organization_id,
-                                UserThreads.user_id==current_user.id,UserThreads.id==t_id)
+   threads=db.query(ChatThreads).filter(ChatThreads.org_id==current_user.org_id,
+                                ChatThreads.user_id==current_user.id,ChatThreads.id==t_id)
    
    threads=[u.id for u in threads]
    return threads
@@ -251,25 +251,25 @@ from celery.result import AsyncResult
 
 
 #         if filename in cited_files:
-#             doc_id = src['metadata']["doc_id"]
+#             document_id = src['metadata']["document_id"]
 #             page_content = src['page_content']
-#             print("doc_id",doc_id)
-#             if doc_id not in result:
-#                  result[doc_id] = {
+#             print("document_id",document_id)
+#             if document_id not in result:
+#                  result[document_id] = {
 #                     "filename": filename,
 #                     "chunks": [],
 #                     "link":None
 #                 }
 
 #             # Append page content to dict
-#             result[doc_id]["chunks"].append(page_content)
+#             result[document_id]["chunks"].append(page_content)
 #     # print(result)
 
 #     output=[]
-#     for doc_id,items in result.items():
+#     for document_id,items in result.items():
             
-#             my_bytes=_get_doc_by_id(db=db,org_id=org_id,doc_id=doc_id)
-#             # docs=_get_doc_by_id(db,current_user,doc_id)
+#             my_bytes=_get_doc_by_id(db=db,org_id=org_id,document_id=document_id)
+#             # docs=_get_doc_by_id(db,current_user,document_id)
 #             # full_doc=""
 #             # for doc in docs:
 #             #      print("doc",doc)
@@ -288,8 +288,8 @@ from celery.result import AsyncResult
 #             response=upload_pdf_to_github(file_name=items['filename'],owner="rahulkumarcollectcent",token="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",folder='uploads',repo='pdf-viewer',pdf_bytes=my_bytes)
 #             # print(response)
             
-#             result[doc_id]['link']=response['link']
-#             output.append({"filename":result[doc_id]['filename'],"link":result[doc_id]['link'],"doc_id":doc_id})
+#             result[document_id]['link']=response['link']
+#             output.append({"filename":result[document_id]['filename'],"link":result[document_id]['link'],"document_id":document_id})
 #             # print(my_bytes)
 #     # print("result",result)
 #     return output
@@ -305,17 +305,17 @@ from celery.result import AsyncResult
 #     data=await websocket.receive_json()
     
 #     print("data",data)
-#     user_allowed_suborg_ids=list_user_access(user_id=current_user.id,org_id=data['org_id'],db=db)
-#     print("all sub org ids",user_allowed_suborg_ids)
-#     if not user_allowed_suborg_ids:
+#     user_allowed_dept_ids=list_user_access(user_id=current_user.id,org_id=data['org_id'],db=db)
+#     print("all sub org ids",user_allowed_dept_ids)
+#     if not user_allowed_dept_ids:
 #            raise HTTPException(status_code=403, detail="No acces to any department")
 #     allowed=_allowed_thread_id(db=db,current_user=current_user,t_id=data['selected'])
 #     print("allowed thread",allowed)
 #     if not allowed:
 #        raise HTTPException(status_code=403, detail="Not valid thread for current user")
 #     retrieval_list=[]
-#     for suborg_id in user_allowed_suborg_ids:
-#         vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\\{data['org_id']}\\dept\\{suborg_id}")
+#     for dept_id in user_allowed_dept_ids:
+#         vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\\{data['org_id']}\\dept\\{dept_id}")
 #        # vectorStore.set_vector_store(docs=rows,embeddings=embeddings)
         
 #         rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type='mmr',top_n=data['top_k'])
@@ -386,8 +386,8 @@ def list_threads(db: Session = Depends(get_db),
  
 ):
 
-   threads=db.query(UserThreads).filter(UserThreads.organization_id==current_user.organization_id,
-                                UserThreads.user_id==current_user.id).all()
+   threads=db.query(ChatThreads).filter(ChatThreads.org_id==current_user.org_id,
+                                ChatThreads.user_id==current_user.id).all()
    threads=[u.id for u in threads]
 
    return {"threads":threads}
@@ -396,7 +396,7 @@ def list_threads(db: Session = Depends(get_db),
 def ask_thread(   
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)):
-    user_thread=UserThreads(user_id=current_user.id,organization_id=current_user.organization_id)
+    user_thread=ChatThreads(user_id=current_user.id,org_id=current_user.org_id)
     db.add(user_thread)
     db.commit()
    
@@ -424,12 +424,12 @@ def ask(
     
 ):
     s=time.monotonic()
-    # if not _can_read(db, current_user, org_id, suborg_id):
+    # if not _can_read(db, current_user, org_id, dept_id):
     #     raise HTTPException(status_code=403, detail="No read access to this department")
 
-    user_allowed_suborg_ids=list_user_access(user_id=current_user.id,org_id=data.org_id,db=db)
-    print("all sub org ids",user_allowed_suborg_ids)
-    if not user_allowed_suborg_ids:
+    user_allowed_dept_ids=list_user_access(user_id=current_user.id,org_id=data.org_id,db=db)
+    print("all sub org ids",user_allowed_dept_ids)
+    if not user_allowed_dept_ids:
            raise HTTPException(status_code=403, detail="No acces to any department")
     allowed=_allowed_thread_id(db=db,current_user=current_user,t_id=thread_id)
     print("allowed thread",allowed)
@@ -437,8 +437,8 @@ def ask(
     if not allowed:
        raise HTTPException(status_code=403, detail="Not valid thread for current user")
     retrieval_list=[]
-    for suborg_id in user_allowed_suborg_ids:
-        vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{data.org_id}/dept/{suborg_id}")
+    for dept_id in user_allowed_dept_ids:
+        vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{data.org_id}/dept/{dept_id}")
         rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=data.top_k)
         retrieval_list.append(rv)
 
@@ -461,10 +461,10 @@ def ask(
     # print("output",output)
     s1=time.monotonic()
     serialize_doc_list=documents_to_dicts(docs_list)
-    # my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.organization_id,sources=serialize_doc_list)
+    # my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
     # print(my_link)
-    links=filter_sources_by_citation.delay(citations=output['citation'],org_id=current_user.organization_id,sources=serialize_doc_list)
-    # links=q.enqueue(filter_sources_by_citation,citations=output['citation'],org_id=current_user.organization_id,sources=serialize_doc_list)
+    links=filter_sources_by_citation.delay(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
+    # links=q.enqueue(filter_sources_by_citation,citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
     # links=q.enqueue(hello,2,3)
     print("links",links.id)
     #bt.add_task(create_link_for_citation,db,current_user,citations=output['citation'],sources=docs_list)
@@ -472,9 +472,9 @@ def ask(
 
     if output['is_context_availale']=='True':
          
-       chat_message=ChatMessage(user_query=data.q,bot_response=output['response'],thread_id=thread_id,user_id=current_user.id,organization_id=data.org_id,unanswer_question=False)
+       chat_message=ChatMessage(query=data.q,response=output['response'],thread_id=thread_id,user_id=current_user.id,org_id=data.org_id,tokens=answer['total_token'],citation=output['citation'],unanswer_query=False)
     else :
-         chat_message=ChatMessage(user_query=data.q,bot_response=output['response'],thread_id=thread_id,user_id=current_user.id,organization_id=data.org_id,unanswer_question=True)
+         chat_message=ChatMessage(query=data.q,response=output['response'],thread_id=thread_id,user_id=current_user.id,org_id=data.org_id,tokens=answer['total_token'],citation=output['citation'],unanswer_query=True)
     db.add(chat_message)
     db.commit()
     
@@ -487,9 +487,9 @@ def ask(
     # return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list,"size":siz}
 
 
-def _get_suborg_by_doc_id(db:Session,doc_id_list:list[int]):
-     suborg_id=db.query(OrgDocument.id,OrgDocument.suborg_id).filter(OrgDocument.id.in_(doc_id_list)).all()
-     return suborg_id
+def _get_suborg_by_document_id(db:Session,document_id_list:list[int]):
+     dept_id=db.query(OrgDocument.id,OrgDocument.dept_id).filter(OrgDocument.id.in_(document_id_list)).all()
+     return dept_id
 
 
 @router.post("/ask/{thread_id}/doocuments", summary="Ask a question over allowed departments over perticular document")
@@ -501,28 +501,28 @@ def ask_by_id(
     
 ):
     s=time.monotonic()
-    # if not _can_read(db, current_user, org_id, suborg_id):
+    # if not _can_read(db, current_user, org_id, dept_id):
     #     raise HTTPException(status_code=403, detail="No read access to this department")
-    print(data.doc_id,thread_id)
-    doc_suborg=_get_suborg_by_doc_id(db,data.doc_id)
+    print(data.document_id,thread_id)
+    doc_suborg=_get_suborg_by_document_id(db,data.document_id)
     print(doc_suborg)
     if not doc_suborg:
          raise HTTPException(status_code=403, detail="No departmetn found for given document")
     retrieval_list=[]
 
-    # user_allowed_suborg_ids=list_user_access(user_id=data.user_id,org_id=data.org_id,db=db)
-    # user_allowed_suborg_ids=list_user_access(user_id=current_user.id,org_id=data.org_id,db=db)
-    # print("all sub org ids",user_allowed_suborg_ids)
-    # if not user_allowed_suborg_ids:
+    # user_allowed_dept_ids=list_user_access(user_id=data.user_id,org_id=data.org_id,db=db)
+    # user_allowed_dept_ids=list_user_access(user_id=current_user.id,org_id=data.org_id,db=db)
+    # print("all sub org ids",user_allowed_dept_ids)
+    # if not user_allowed_dept_ids:
     #        raise HTTPException(status_code=403, detail="No acces to any department")
     allowed=_allowed_thread_id(db=db,current_user=current_user,t_id=thread_id)
     print("allowed thread",allowed)
     if not allowed:
        raise HTTPException(status_code=403, detail="Not valid thread for current user")
-    for doc_id,suborg_id in doc_suborg:
+    for document_id,dept_id in doc_suborg:
          
-        vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{data.org_id}/dept/{suborg_id}")
-        rv=retriever.get_retreiver_by_doc_id(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=data.top_k,doc_id=doc_id)
+        vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{data.org_id}/dept/{dept_id}")
+        rv=retriever.get_retreiver_by_document_id(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=data.top_k,document_id=document_id)
         retrieval_list.append(rv)
     rvm= EnsembleRetriever(retrievers=retrieval_list)
     docs_list=rvm.invoke(input=data.q)

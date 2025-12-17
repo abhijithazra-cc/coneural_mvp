@@ -5,9 +5,9 @@ from datetime import timedelta
 
 from app.database import get_db
 from app.models.organization_model import Organization as OrganizationModel
-from app.models.suborganization_model import Suborganization as SuborganizationModel
-from app.models.user_model import User as UserModel, UserType
-from app.models.access_model import UserDomainAccess
+from app.models.department_model import Department as DepartmentModel
+from app.models.user_model import User as UserModel
+from app.models.user_access_department_model import UserAccessDepartment
 from app.services.auth import (
     get_password_hash, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES,
     get_current_active_user, get_user_by_email, get_user_by_username
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 def _org_public(o: OrganizationModel) -> Dict:
     return {"id": o.id, "name": o.name, "description": o.description}
 
-def _sub_public(s: SuborganizationModel) -> Dict:
+def _sub_public(s: DepartmentModel) -> Dict:
     return {"id": s.id, "name": s.name, "description": s.description}
 
 # STEP 1: Org + Admin signup (single call that your first screen needs)
@@ -48,7 +48,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     hashed = get_password_hash(payload.password)
     admin = UserModel(
         email=payload.admin_email, username=payload.admin_name,
-        hashed_password=hashed, user_type=UserType.ADMIN, organization_id=org.id
+        hashed_password=hashed, user_type=UserType.ADMIN, org_id=org.id
     )
     db.add(admin); db.commit(); db.refresh(admin)
     db.flush()
@@ -71,7 +71,7 @@ def update_org_profile(
 ):
     org = db.query(OrganizationModel).filter(OrganizationModel.id == org_id).first()
     if not org: raise HTTPException(status_code=404, detail="Organization not found")
-    if current_user.user_type != UserType.ADMIN or current_user.organization_id != org_id:
+    if current_user.user_type != UserType.ADMIN or current_user.org_id != org_id:
         raise HTTPException(status_code=403, detail="Only organization admin can update profile")
 
     if payload.website_url is not None: org.website_url = str(payload.website_url)
@@ -88,10 +88,10 @@ def bulk_create_departments(
     body: DepartmentBulkCreate, db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
 ):
-    if current_user.user_type != UserType.ADMIN or current_user.organization_id != body.organization_id:
+    if current_user.user_type != UserType.ADMIN or current_user.org_id != body.org_id:
         raise HTTPException(status_code=403, detail="Only organization admin can manage departments")
 
-    org = db.query(OrganizationModel).filter(OrganizationModel.id == body.organization_id).first()
+    org = db.query(OrganizationModel).filter(OrganizationModel.id == body.org_id).first()
     if not org: raise HTTPException(status_code=404, detail="Organization not found")
 
     created_or_existing = []
@@ -99,15 +99,15 @@ def bulk_create_departments(
         name_norm = name.strip()
         if not name_norm:
             continue
-        sub = db.query(SuborganizationModel).filter(
-            SuborganizationModel.organization_id == body.organization_id,
-            SuborganizationModel.name == name_norm
+        sub = db.query(DepartmentModel).filter(
+            DepartmentModel.org_id == body.org_id,
+            DepartmentModel.name == name_norm
         ).first()
         if not sub:
-            sub = SuborganizationModel(organization_id=body.organization_id, name=name_norm, description=name_norm)
+            sub = DepartmentModel(org_id=body.org_id, name=name_norm, description=name_norm)
             db.add(sub)
         db.flush()
-        vectorManager.create_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{sub.organization_id}\dept\{sub.id}")
+        vectorManager.create_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{sub.org_id}\dept\{sub.id}")
         created_or_existing.append(sub)
     db.commit()
     return [_sub_public(s) for s in created_or_existing]
@@ -118,10 +118,10 @@ def invite_users(
     body: InviteUsersRequest, db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
 ):
-    if current_user.user_type != UserType.ADMIN or current_user.organization_id != body.organization_id:
+    if current_user.user_type != UserType.ADMIN or current_user.org_id != body.org_id:
         raise HTTPException(status_code=403, detail="Only organization admin can invite users")
 
-    org = db.query(OrganizationModel).filter(OrganizationModel.id == body.organization_id).first()
+    org = db.query(OrganizationModel).filter(OrganizationModel.id == body.org_id).first()
     if not org: raise HTTPException(status_code=404, detail="Organization not found")
 
     out = []
@@ -140,32 +140,32 @@ def invite_users(
             tmp_hash = get_password_hash("Temp@1234")
             user_type = UserType.USER if inv.role != RoleEnum.ADMIN else UserType.ADMIN
             user = UserModel(email=inv.email, username=uname, hashed_password=tmp_hash,
-                             user_type=user_type, organization_id=org.id)
+                             user_type=user_type, org_id=org.id)
             db.add(user); db.flush()
 
         # Map departments
         dept_ids = []
         for dname in inv.department_names:
-            sub = db.query(SuborganizationModel).filter(
-                SuborganizationModel.organization_id == org.id,
-                SuborganizationModel.name == dname
+            sub = db.query(DepartmentModel).filter(
+                DepartmentModel.org_id == org.id,
+                DepartmentModel.name == dname
             ).first()
             if not sub:
                 # auto-create if not found (nice UX)
-                sub = SuborganizationModel(organization_id=org.id, name=dname.strip(), description=dname.strip())
+                sub = DepartmentModel(org_id=org.id, name=dname.strip(), description=dname.strip())
                 db.add(sub); db.flush()
             dept_ids.append(sub.id)
 
         # Access rows
         for sid in dept_ids:
-            access = db.query(UserDomainAccess).filter(
-                UserDomainAccess.org_id == org.id,
-                UserDomainAccess.suborg_id == sid,
-                UserDomainAccess.user_id == user.id
+            access = db.query(UserAccessDepartment).filter(
+                UserAccessDepartment.org_id == org.id,
+                UserAccessDepartment.dept_id == sid,
+                UserAccessDepartment.user_id == user.id
             ).first()
             if not access:
-                access = UserDomainAccess(
-                    org_id=org.id, suborg_id=sid, user_id=user.id,
+                access = UserAccessDepartment(
+                    org_id=org.id, dept_id=sid, user_id=user.id,
                     can_read=True,
                     can_upload=True if inv.role in (RoleEnum.ADMIN, RoleEnum.DEPT_AUTHOR) else False,
                     is_author=True if inv.role == RoleEnum.DEPT_AUTHOR else False,

@@ -4,7 +4,7 @@ class IVectorstore(ABC):
       def _load_or_create_store():
            pass
       @abstractmethod
-      def add_documents(docs,doc_id):
+      def add_documents(docs,document_id):
            pass
       @abstractmethod
       def set_vector_store(docs,embeddings):
@@ -13,9 +13,9 @@ class IVectorstore(ABC):
       def get_vector_store():
           pass
       @abstractmethod
-      def get_chunks_by_doc_id(doc_id):
+      def get_chunks_by_document_id(document_id):
            pass
       @abstractmethod
-      def delete_document_by_id(doc_id):
+      def delete_document_by_id(document_id):
            pass
       
