@@ -8,22 +8,22 @@ import os
 from pydantic import BaseModel,Field
 from app.database import get_db
 from app.services.auth import get_current_active_user,get_current_active_socket_user
-from app.models.user_model import User as UserModel, UserType
-from app.models.access_model import UserDomainAccess
-from app.models.suborganization_model import Suborganization as SuborganizationModel
+from app.models.user_model import User as UserModel
+from app.models.user_access_department_model import UserAccessDepartment
+from app.models.department_model import Department as DepartmentModel
 from app.models.doc_models import DocChunk                   #  from doc_models
 # from app.models.org_document_model import OrgDocument       #  from org_document_model
 from app.models.doc_models import OrgDocument,DocChunk  
 from app.utils.embeddings import embed_texts
-from app.models.user_thread_model import UserThreads
+from app.models.chat_thread_model import ChatThreads
 
 router = APIRouter(prefix="/search", tags=["search documents"])
 def search_data(data:DocChunk):
-    return {"doc_id":data.doc_id,"content":data.content}
-def search_content(session, query, doc_ids: list):
+    return {"document_id":data.document_id,"content":data.content}
+def search_content(session, query, document_ids: list):
     q = (
         select(DocChunk)
-        .where(DocChunk.doc_id.in_(doc_ids))   # filter by list of doc_ids
+        .where(DocChunk.document_id.in_(document_ids))   # filter by list of document_ids
         .where(func.lower(DocChunk.content).like(f"%{query.lower()}%"))
     )
     rows = session.execute(q).scalars().all()
@@ -36,11 +36,11 @@ def search_documents(data: AskRequestOnDocument, db: Session = Depends(get_db), 
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     # Check if user has access to the specified documents
-    user_access = db.query(UserDomainAccess).filter(
-        UserDomainAccess.user_id == current.id,
-        UserDomainAccess.org_id == data.org_id,
-        UserDomainAccess.suborg_id.in_(
-            db.query(OrgDocument.suborg_id).filter(OrgDocument.id.in_(data.doc_id))
+    user_access = db.query(UserAccessDepartment).filter(
+        UserAccessDepartment.user_id == current.id,
+        UserAccessDepartment.org_id == data.org_id,
+        UserAccessDepartment.dept_id.in_(
+            db.query(OrgDocument.dept_id).filter(OrgDocument.id.in_(data.document_id))
         )
     ).first()
 
@@ -48,8 +48,8 @@ def search_documents(data: AskRequestOnDocument, db: Session = Depends(get_db), 
         raise HTTPException(status_code=403, detail="No access to the specified documents")
 
     # Perform the search
-    results = search_content(db, data.q, data.doc_id)
+    results = search_content(db, data.q, data.document_id)
     print("Raw search results:", results)
-    unique_results = list({r['doc_id'] for r in results})
+    unique_results = list({r['document_id'] for r in results})
     print("Search results:", unique_results)
     return {"results": unique_results}

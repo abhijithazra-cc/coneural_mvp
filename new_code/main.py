@@ -49,7 +49,7 @@ Base.metadata.create_all(bind=engine)
 # 🔹 Import routers AFTER app + models
 from app.routers.auth import router as auth_router            # /auth
 from app.routers.organizations import router as org_router    # /organizations
-from app.routers.suborganizations import router as suborg_router  # /departments or /suborganizations
+from app.routers.department import router as suborg_router  # /departments or /Departments
 from app.routers.users import router as users_router          # /users
 from app.routers.documents import router as docs_router       # /org-documents
 from app.routers.access import router as access_router        # /access

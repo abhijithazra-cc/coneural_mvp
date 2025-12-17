@@ -1,14 +1,14 @@
 from pydantic import BaseModel
 from typing import Optional
 
-class SuborganizationCreate(BaseModel):
+class DepartmentCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    organization_id: int
+    org_id: int
 
 
-class SuborganizationUpdate(BaseModel):
+class DepartmentUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    organization_id: Optional[int] = None
+    org_id: Optional[int] = None
     is_active: Optional[bool] = None

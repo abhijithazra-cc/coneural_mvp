@@ -5,7 +5,7 @@ class OrgDocument(Base):
     __tablename__ = "org_documents"
     id = Column(Integer, primary_key=True, index=True)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
-    suborg_id = Column(Integer, ForeignKey("suborganizations.id", ondelete="CASCADE"), nullable=False)
+    dept_id = Column(Integer, ForeignKey("Departments.id", ondelete="CASCADE"), nullable=False)
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
 
     filename = Column(String(512), nullable=False)

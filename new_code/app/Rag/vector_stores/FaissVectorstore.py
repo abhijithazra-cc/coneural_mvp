@@ -22,7 +22,7 @@ class FaissVectorstore(IVectorstore):
         os.makedirs(persist_dir, exist_ok=True)
         self.embeddings = embeddings
         self.vectorstore = None
-        self.doc_id_list=[]
+        self.document_id_list=[]
      
     # ---------- Load or create ----------
     def _load_or_create_store(self):
@@ -44,24 +44,24 @@ class FaissVectorstore(IVectorstore):
     def get_vector_store(self):
         return self.vectorstore
     # ---------- Add documents ----------
-    def add_documents(self, documents,doc_id):
+    def add_documents(self, documents,document_id):
             store = self._load_or_create_store()
-            # assign doc_id metadata for deletion tracking
-          #   doc_id = str(uuid.uuid4())
+            # assign document_id metadata for deletion tracking
+          #   document_id = str(uuid.uuid4())
             now=datetime.now()
             print("time",now)
             for c in documents:
-                c.metadata["doc_id"] = doc_id
+                c.metadata["document_id"] = document_id
                 c.metadata["date_time"]=now.isoformat()
-            self.doc_id_list.append(doc_id)
+            self.document_id_list.append(document_id)
 
             store.add_documents(documents=documents)
-            print(f"✅ Added {len(documents)} chunks (doc_id={doc_id})")
+            print(f"✅ Added {len(documents)} chunks (document_id={document_id})")
 
             store.save_local(self.persist_dir)
             self.vectorstore = store
     def get_document_ids(self):
-        return self.doc_id_list
+        return self.document_id_list
     def is_similar_document(self, chunks) -> bool:
         store = self._load_or_create_store()
         if not chunks:
@@ -99,29 +99,29 @@ class FaissVectorstore(IVectorstore):
 
            return False
     # ---------- Fetch chunks for one document ----------
-    def get_chunks_by_doc_id(self, doc_id: str):
+    def get_chunks_by_document_id(self, document_id: str):
         store = self._load_or_create_store()
         docs = [
             doc for doc in store.docstore._dict.values()
-            if doc.metadata.get("doc_id") == doc_id
+            if doc.metadata.get("document_id") == document_id
         ]
         return docs
 
     # ---------- Delete document + its chunks ----------
-    def delete_document_by_id(self, doc_id: str):
+    def delete_document_by_id(self, document_id: str):
         store = self._load_or_create_store()
         # find matching IDs in FAISS index
         ids_to_delete = [
             id_ for id_, doc in store.docstore._dict.items()
-            if doc.metadata.get("doc_id") == doc_id
+            if doc.metadata.get("document_id") == document_id
         ]
         print("deleted ids",ids_to_delete)
         if not ids_to_delete:
-            print(f"⚠️ No chunks found for doc_id={doc_id}")
+            print(f"⚠️ No chunks found for document_id={document_id}")
             return
         store.delete(ids=ids_to_delete)
         store.save_local(self.persist_dir)
         self.vectorstore = store
-        # chunks=self.get_chunks_by_doc_id(doc_id=doc_id)
+        # chunks=self.get_chunks_by_document_id(document_id=document_id)
         # print(f"chunks: {chunks}")
-        print(f"🗑️ Deleted {len(ids_to_delete)} chunks for doc_id={doc_id}")
+        print(f"🗑️ Deleted {len(ids_to_delete)} chunks for document_id={document_id}")

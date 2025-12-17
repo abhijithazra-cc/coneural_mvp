@@ -13,8 +13,8 @@ class UserCreate(BaseModel):
     username: str
     password: str
     user_type: UserType = UserType.ADMIN
-    organization_id: Optional[int] = None
-    suborganization_id: Optional[int] = None
+    org_id: Optional[int] = None
+    Department_id: Optional[int] = None
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -25,8 +25,8 @@ class User(BaseModel):
     username: str
     email: EmailStr
     user_type: UserType
-    organization_id: Optional[int] = None
-    suborganization_id: Optional[int] = None
+    org_id: Optional[int] = None
+    Department_id: Optional[int] = None
     is_active: bool
     created_at: datetime
 

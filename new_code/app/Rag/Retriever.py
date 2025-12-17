@@ -8,8 +8,8 @@ class Retriever():
           
           self.retriever  = vector_store.as_retriever(search_type=search_type, search_kwargs={"k": int(top_n)})
           return self.retriever
-      def get_retreiver_by_doc_id(self,vector_store,search_type,top_n,doc_id):
-          self.retriever  = vector_store.as_retriever(search_type=search_type, search_kwargs={"k": int(top_n), "filter": {"doc_id": int(doc_id)} })
+      def get_retreiver_by_document_id(self,vector_store,search_type,top_n,document_id):
+          self.retriever  = vector_store.as_retriever(search_type=search_type, search_kwargs={"k": int(top_n), "filter": {"document_id": int(document_id)} })
           return self.retriever
       def get_relevant_document(self,query):
            

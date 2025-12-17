@@ -22,7 +22,7 @@ class OrgProfileUpdate(BaseModel):
     social_handles: Optional[Dict[str, str]] = None  # {"twitter":"...", "linkedin":"..."}
 
 class DepartmentBulkCreate(BaseModel):
-    organization_id: int
+    org_id: int
     departments: List[str]  # names e.g. ["HR","Finance & Accounts","IT & Technical Support"]
 
 class RoleEnum(str, Enum):
@@ -37,7 +37,7 @@ class InviteUserItem(BaseModel):
     neural_cap: Optional[int] = 1000000
 
 class InviteUsersRequest(BaseModel):
-    organization_id: int
+    org_id: int
     invites: List[InviteUserItem]
 
 class InviteUsersResponse(BaseModel):

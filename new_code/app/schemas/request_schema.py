@@ -20,7 +20,7 @@ class AskRequest(BaseModel):
 
 class AskRequestOnDocument(BaseModel):
  
-    doc_id:list[int]
+    document_id:list[int]
     org_id: int
     q: str
     top_k:int

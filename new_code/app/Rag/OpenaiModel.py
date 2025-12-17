@@ -56,7 +56,7 @@ You must ONLY return the following two fields:
 {{
   "response": "<Single natural-language answer with inline citations> Convert response into a  HTML-tag list of dictionary where key is tag and value is content considering it give beutiful:
 ,
-  "citation": [json("file1.pdf","doc_id"), json("file2.pdf","doc_id"), ...]   // list of every file used
+  "citation": [json("file1.pdf","document_id"), json("file2.pdf","document_id"), ...]   // list of every file used
   "is_context_availale":"True" or "False"   (check if answer given via context or model own knowledge but both can't be together)
 }}
 

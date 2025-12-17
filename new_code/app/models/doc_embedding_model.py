@@ -7,7 +7,7 @@ class DocEmbedding(Base):
     id = Column(Integer, primary_key=True, index=True)
     org_document_id = Column(Integer, ForeignKey("org_documents.id", ondelete="CASCADE"), nullable=False)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
-    suborg_id = Column(Integer, ForeignKey("suborganizations.id", ondelete="CASCADE"), nullable=False)
+    dept_id = Column(Integer, ForeignKey("Departments.id", ondelete="CASCADE"), nullable=False)
 
     chunk_id = Column(Integer, nullable=False)
     chunk_text = Column(Text, nullable=False)
