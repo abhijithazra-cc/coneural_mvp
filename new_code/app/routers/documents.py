@@ -1,7 +1,10 @@
 # app/routers/documents.py
 
+from enum import Enum
 import io
 from typing import Optional
+
+from prometheus_client import Enum
 from app.Rag.VectorManager import vectorManager
 import numpy as np
 from fastapi import (
@@ -112,7 +115,14 @@ def _ensure_org_admin_or_dept_admin_or_author(db: Session, current_user: UserMod
             status_code=403,
             detail="Only the organization admin or department admin or department author can perform this action",
         )
-    
+
+
+from enum import Enum
+
+class ScopeEnum(str, Enum):
+    department = "department"
+    global_scope = "global"
+
 @router.post(
     "/",
     status_code=status.HTTP_201_CREATED,
@@ -121,10 +131,9 @@ def _ensure_org_admin_or_dept_admin_or_author(db: Session, current_user: UserMod
 async def upload_org_document(
     org_id: int = Form(...),
     dept_id: int = Form(...),
-    user_id: Optional[int] = Form(
-        None, description="Uploader user id (optional, default = current user)"
-    ),
-    title: str = Form(""),
+
+    tag: str = Form(""),
+    scope: ScopeEnum = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current: UserModel = Depends(get_current_active_user),
@@ -204,11 +213,17 @@ async def upload_org_document(
     
 
     doc_bytes=base64.b64encode(payload)
+    if scope==ScopeEnum.global_scope:
+        doc_scope="global"
+    else:
+        doc_scope="department"
     doc = OrgDocument(
         org_id=org_id,
         dept_id=dept_id,
         uploaded_by=current.id,
-        title=title or file.filename,
+        title=file.filename,
+        tag= tag,
+        scope=doc_scope,
         filename=file.filename,
         mime_type=file.content_type or "application/octet-stream",
         size_bytes=len(payload),

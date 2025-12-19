@@ -7,7 +7,7 @@ class OrganizationCreate(BaseModel):
 
 class OrganizationUpdate(BaseModel):
     organization_name: Optional[str] = None
-    description: Optional[str] = None
+    your_name: Optional[str] = None
     country: Optional[str] = None
     website_url: Optional[str] = None
     industry: Optional[str] = None

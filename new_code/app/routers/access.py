@@ -51,7 +51,10 @@ def _ensure_user_exists(db: Session, user_id: int) -> UserModel:
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
-
+def _ensure_user_exists_in_department(db: Session, user_id: int, dept_id: int) -> UserModel:
+    exists=db.query(UserAccessDepartment).filter(UserAccessDepartment.dept_id==dept_id,UserAccessDepartment.user_id==user_id).first()
+    if not exists:
+        raise HTTPException(status_code=404, detail="User not found in this department")
 def _ensure_org_admin(db:Session,current_user: UserModel, org_id: int) -> None:
     """
     Only admins of the SAME org can manage access for that org.
@@ -86,10 +89,7 @@ def _access_public(a: UserAccessDepartment) -> Dict:
         "org_id": a.org_id,
         "dept_id": a.dept_id,
         "user_id": a.user_id,
-        "can_read": getattr(a, "can_read", True),
-        "can_upload": getattr(a, "can_upload", False),
-        "is_author": getattr(a, "is_author", False),
-        "neural_cap": getattr(a, "neural_cap", None),
+        "user_type": a.user_type,
     }
 
 
@@ -109,8 +109,7 @@ def list_user_access(
     Admin-only: list which departments (Departments) this user has access to
     within the admin's organization.
     """
-    if current_user.user_type != UserType.ADMIN:
-        raise HTTPException(status_code=403, detail="Only org admins can view access")
+    _ensure_org_admin(db,current_user, current_user.org_id)
 
     user = _ensure_user_exists(db, user_id)
     if user.org_id != current_user.org_id:
@@ -302,7 +301,7 @@ def promote_author(
 
     if user.org_id != org_id:
         raise HTTPException(status_code=403, detail="User is not in this organization")
-
+    _ensure_user_exists_in_department(db, user_id,dept_id)
     access = (
         db.query(UserAccessDepartment)
         .filter(
@@ -350,7 +349,7 @@ def demote_author(
 
     if user.org_id != org_id:
         raise HTTPException(status_code=403, detail="User is not in this organization")
-
+    _ensure_user_exists_in_department(db, user_id,dept_id)
     access = (
         db.query(UserAccessDepartment)
         .filter(

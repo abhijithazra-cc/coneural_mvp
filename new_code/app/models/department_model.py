@@ -3,7 +3,7 @@ from sqlalchemy.sql import func
 from app.database import Base
 
 class Department(Base):
-    __tablename__ = "department"
+    __tablename__ = "departments"
 
     id = Column(Integer, primary_key=True, index=True)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)

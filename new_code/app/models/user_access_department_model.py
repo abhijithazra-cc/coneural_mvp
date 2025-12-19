@@ -18,8 +18,8 @@ class UserAccessDepartment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)
-    dept_id = Column(Integer, ForeignKey("department.id", ondelete="SET NULL"), nullable=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    dept_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
 
     user_type = Column(SAEnum(UserType), nullable=False, default=UserType.USER)
 

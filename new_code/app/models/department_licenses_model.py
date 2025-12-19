@@ -12,7 +12,7 @@ class DepartmentLicenses(Base):
     __tablename__ = "department_licenses"   
     id = Column(Integer, primary_key=True, index=True)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
-    dept_id = Column(Integer, ForeignKey("department.id", ondelete="CASCADE"), nullable=False)
+    dept_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=False)
     allocated_licenses = Column(Integer, nullable=False, default=0)
     total_licenses = Column(Integer, nullable=False, server_default="0")
 

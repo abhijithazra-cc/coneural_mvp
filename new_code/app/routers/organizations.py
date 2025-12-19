@@ -69,19 +69,27 @@ def update_organization(org_id: int, organization_update: OrganizationUpdate,
                         db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_active_user)):
     try:
         org = db.query(OrganizationModel).filter(OrganizationModel.id == org_id).first()
+        admin=db.query(UserModel).join(UserAccessDepartment,
+            (UserAccessDepartment.user_id==UserModel.id) & 
+            (UserAccessDepartment.org_id==org_id) & 
+            (UserAccessDepartment.user_type==UserType.ADMIN)
+        ).filter(UserModel.id==current_user.id).first()
+        if not admin:
+            raise HTTPException(status_code=403, detail="You do not have permission to update this organization")
         if not org: raise HTTPException(status_code=404, detail="Organization not found")
         if organization_update.organization_name and organization_update.organization_name != org.name:
             conflict = db.query(OrganizationModel).filter(OrganizationModel.name == organization_update.organization_name,
                                                           OrganizationModel.id != org_id).first()
             if conflict: raise HTTPException(status_code=400, detail="Organization name already exists")
             org.name = organization_update.organization_name
-        if organization_update.description is not None: org.description = organization_update.description
+        if organization_update.country is not None: org.description = organization_update.country
         if organization_update.website_url is not None: org.website_url = organization_update.website_url   
         if organization_update.industry is not None: org.industry = organization_update.industry
         if organization_update.company_size is not None: org.company_size = organization_update.company_size
         if organization_update.social_handles is not None: org.social_handles = organization_update.social_handles
         if hasattr(organization_update, "is_active") and organization_update.is_active is not None:
             org.is_active = organization_update.is_active
+        if organization_update.your_name is not None: admin.username = organization_update.your_name
         # if organization_update.name and organization_update.name != org.name:
         #     conflict = db.query(OrganizationModel).filter(OrganizationModel.name == organization_update.name,
         #                                                   OrganizationModel.id != org_id).first()
