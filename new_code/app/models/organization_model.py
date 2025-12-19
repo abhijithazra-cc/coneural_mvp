@@ -8,7 +8,7 @@ class Organization(Base):
     __tablename__ = "organizations"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(255), unique=True, index=True)
     description = Column(String(1024))
 
     # Optional org profile fields (you already created these)

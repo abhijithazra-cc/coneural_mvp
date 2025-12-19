@@ -79,7 +79,7 @@ def _require_admin_same_org(db:Session,current_user: UserModel, org_id: int):
     """
     Only ADMIN of that org can operate on users of that org.
     """
-    dom=db.query(UserAccessDepartment).filter(UserAccessDepartment.org_id==current_user.org_id,UserAccessDepartment.user_id==current_user.id).first()
+    dom=db.query(UserAccessDepartment).filter(UserAccessDepartment.org_id==org_id,UserAccessDepartment.user_id==current_user.id).first()
     if not dom: 
         raise HTTPException(status_code=403, detail="No department access found for current user")
     if dom.user_type != UserType.ADMIN:
@@ -155,7 +155,7 @@ def list_users(
     """
     Admin-only: list all users in your organization.
     """
-    _require_admin_same_org(current_user, current_user.org_id)
+    _require_admin_same_org(db,current_user, current_user.org_id)
 
     users = db.query(UserModel).filter(UserModel.org_id == current_user.org_id).all()
     return [
@@ -163,7 +163,7 @@ def list_users(
             id=u.id,
             name=u.username,
             email=u.email,
-            user_type=u.user_type.value,
+         
         )
         for u in users
     ]
@@ -198,8 +198,7 @@ def get_user_by_id(
     return UserPublic(
         id=user.id,
         name=user.username,
-        email=user.email,
-        user_type=user.user_type.value,
+        email=user.email
     )
 
 
@@ -248,7 +247,7 @@ def update_user(
         id=user.id,
         name=user.username,
         email=user.email,
-        user_type=user.user_type.value,
+        
     )
 
 

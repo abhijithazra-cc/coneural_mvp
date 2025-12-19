@@ -38,7 +38,7 @@ class OrgDocument(Base):
     __tablename__ = "org_documents"
     id = Column(Integer, primary_key=True, index=True)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
-    dept_id=Column(Integer,ForeignKey("department.id",ondelete="CASCADE"),nullable=False)
+    dept_id=Column(Integer,ForeignKey("departments.id",ondelete="CASCADE"),nullable=False)
     uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
     scope=Column(SAEnum(ScopeType),nullable=False,default=ScopeType.DEPT)
     tag=Column(String(256),nullable=True)

@@ -310,8 +310,7 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 # --------------------------------------------------------------------------
 class AdminSignup(BaseModel):
     """Figma: Sign up on behalf of your Organization."""
-    org_name: str = Field(..., min_length=2, max_length=255, description="Organization / Company name")
-    admin_name: str = Field(..., min_length=2, max_length=255, description="Your name / username")
+
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=16, description="8–16 characters")
 
@@ -376,33 +375,33 @@ def create_org_and_admin(body: AdminSignup, db: Session = Depends(get_db)):
     Returns organization + minimal user + bearer token.
     """
     # Unique org name
-    if db.query(OrganizationModel).filter(OrganizationModel.name == body.org_name).first():
-        raise HTTPException(status_code=409, detail="Organization name already exists")
+    # if db.query(OrganizationModel).filter(OrganizationModel.name == body.org_name).first():
+    #     raise HTTPException(status_code=409, detail="Organization name already exists")
 
     # Unique email
     if get_user_by_email(db, body.email):
         raise HTTPException(status_code=409, detail="Email already registered")
 
     # Unique username (admin_name)
-    if get_user_by_username(db, body.admin_name):
-        base, i, uname = body.admin_name, 1, body.admin_name
-        while get_user_by_username(db, uname):
-            i += 1
-            uname = f"{base}{i}"
-        username = uname
-    else:
-        username = body.admin_name
+    # if get_user_by_username(db, body.admin_name):
+    #     base, i, uname = body.admin_name, 1, body.admin_name
+    #     while get_user_by_username(db, uname):
+    #         i += 1
+    #         uname = f"{base}{i}"
+    #     username = uname
+    # else:
+    #     username = body.admin_name
 
     # Create org
     org = OrganizationModel()
     db.add(org)
     db.flush()  # get org.id before commit
-    vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org.id}")
+    vectorManager.create_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org.id}")
     # Create admin user
     hashed = get_password_hash(body.password)
     admin = UserModel(
         email=body.email,
-        username=username,
+        
         hashed_password=hashed,
  
         org_id=org.id,
@@ -423,7 +422,7 @@ def create_org_and_admin(body: AdminSignup, db: Session = Depends(get_db)):
     token = create_access_token({"sub": admin.email}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
 
     return {
-        "organization": {"id": org.id, "name": org.name, "description": org.description},
+        "organization": {"id": org.id},
         "user": {"id": admin.id, "name": admin.username, "email": admin.email},
         "access_token": token,
         "token_type": "bearer",
@@ -442,7 +441,7 @@ def login_user(creds: UserLogin, db: Session = Depends(get_db)):
     return {
         "access_token": token,
         "token_type": "bearer",
-        "user": {"id": user.id, "name": user.username, "email": user.email, "user_type": user.user_type.value},
+        "user": {"id": user.id, "name": user.username, "email": user.email},
     }
 
 @router.post("/token", response_model=Token, summary="OAuth2 Password (for Swagger UI)")

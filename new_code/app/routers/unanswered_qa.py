@@ -29,7 +29,7 @@ router = APIRouter(prefix="/uq", tags=["unanswer_panel"])
 def _response_unanswered_question(c:ChatMessage):
     return{
         "id":c.id,
-        "unanswer_question":c.user_query,
+        "unanswer_question":c.query,
         "org_id":c.org_id,
         "user_id":c.user_id,
         "date":c.created_at
@@ -37,7 +37,7 @@ def _response_unanswered_question(c:ChatMessage):
     
 
 def _all_unanswered_question(db:Session):
-    unq=db.query(ChatMessage).filter(ChatMessage.unanswer_question==1).all()
+    unq=db.query(ChatMessage).filter(ChatMessage.unanswer_query==1).all()
 
     return [_response_unanswered_question(item) for item in unq ]
 
