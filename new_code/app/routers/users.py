@@ -161,7 +161,7 @@ def list_users(
     return [
         UserPublic(
             id=u.id,
-            name=u.username,
+            name=str(u.username),
             email=u.email,
          
         )

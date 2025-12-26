@@ -22,7 +22,8 @@ if not DATABASE_URL:
             "Example: DATABASE_URL=mysql+pymysql://user:pass@host:3306/coreneural_dev"
         )
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600, connect_args={"charset": "utf8mb4"}
+)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 Base = declarative_base()
 

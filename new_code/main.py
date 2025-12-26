@@ -29,11 +29,20 @@ class UserUpdate(schemas.BaseUserUpdate):
 
 # 🔹 Create the single FastAPI app
 app = FastAPI(
-    title="Coneural Backend v2",
+    title="Coneural Backend v3",
     version="1.0.0",
     description="AI-powered SaaS backend for orgs, departments, and document ingestion",
 )
-
+from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "message": exc.detail
+        }
+    )
 # 🔹 CORS (relaxed for dev; restrict origins in prod)
 app.add_middleware(
     CORSMiddleware,

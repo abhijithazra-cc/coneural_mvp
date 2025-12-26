@@ -8,7 +8,7 @@ from passlib.context import CryptContext
 # --- Config from environment (set these in your .env) ---
 SECRET_KEY = os.getenv("ACCESS_TOKEN_SECRET", "change_me")   # ← replace in prod
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24))  # default 1 day
 
 # Configure bcrypt so it won't raise on >72 bytes (will silently truncate)
 _pwd_ctx = CryptContext(
@@ -41,5 +41,6 @@ def create_access_token(
 ) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
+    # to_encode.update()
+    # to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)

@@ -4,6 +4,7 @@ from enum import Enum
 import io
 from typing import Optional
 
+from fastapi.responses import JSONResponse
 from prometheus_client import Enum
 from app.Rag.VectorManager import vectorManager
 import numpy as np
@@ -74,6 +75,30 @@ def _check_duplicate(db: Session, org_id: int, dept_id: int, new_text: str, thre
 
     return None  # No duplicates found
 
+
+def _ensure_org_admin(db: Session, current_user: UserModel, org_id: int) :
+    org_admin = (
+        db.query(UserAccessDepartment)
+        .filter(
+            UserAccessDepartment.org_id == org_id,
+            UserAccessDepartment.user_id == current_user.id,
+            UserAccessDepartment.user_type == UserType.ADMIN,
+        )
+        .first()
+    )
+    if org_admin:
+        return 
+
+    
+    if not org_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the organization admin can perform this action",
+        )
+
+
+
+
 def _ensure_org_admin_or_dept_admin_or_author(db: Session, current_user: UserModel, org_id: int, dept_id: int) :
     org_admin = (
         db.query(UserAccessDepartment)
@@ -129,12 +154,12 @@ class ScopeEnum(str, Enum):
     summary="Upload Org Document (PDF/DOCX/TXT) → chunk → store → index",
 )
 async def upload_org_document(
-    org_id: int = Form(...),
-    dept_id: int = Form(...),
+    org_id: int = Form(),
+    dept_id:  Optional[int] = Form(0),
 
     tag: str = Form(""),
-    scope: ScopeEnum = Form(...),
-    file: UploadFile = File(...),
+    scope: ScopeEnum = Form(ScopeEnum.department),
+    files:  list[UploadFile] = File(...),
     db: Session = Depends(get_db),
     current: UserModel = Depends(get_current_active_user),
 ):
@@ -155,71 +180,83 @@ async def upload_org_document(
     # validate_upload_file(file=file)
     # 1) Suborg must belong to org
 
-    sub = (
+    print("dept id",dept_id)
+    if not dept_id:
+        _ensure_org_admin(db=db,current_user=current,org_id=org_id)
+        doc_scope="global"
+        
+    else:
+       
+        sub = (
         db.query(Department)
         .filter(
             Department.id == dept_id,
             Department.org_id == org_id,
         )
         .first()
-    )
-    if not sub:
-        raise HTTPException(
+        )
+        if not sub:
+          raise HTTPException(
             status_code=404,
-            detail="Department not found in this organization",
-        )
-
-    _ensure_org_admin_or_dept_admin_or_author(db=db,current_user=current,org_id=org_id,dept_id=dept_id)
+            detail="No access to department",
+           )
+        _ensure_org_admin_or_dept_admin_or_author(db=db,current_user=current,org_id=org_id,dept_id=dept_id)
+        doc_scope="department"
     # 4) Read & size-check payload
-    payload = await file.read()
-    if not payload:
-        raise HTTPException(status_code=400, detail="Empty file")
-    if len(payload) > MAX_FILE_BYTES:
-        raise HTTPException(
+    print("number of file",len(files))
+    print(dept_id)
+    # files=file
+    for file in files:
+
+         payload = await file.read()
+         if not payload:
+            raise HTTPException(status_code=400, detail="Failiure")
+         if len(payload) > MAX_FILE_BYTES:
+            raise HTTPException(
             status_code=413,
-            detail="File too large (5MB limit)",
-        )
+            detail="Failiure",
+            )
 
     # 5) Extract text
-    try:
+         try:
 
         
-        text,docs = extract_text(
+            text,docs = extract_text(
             payload,
             filename=file.filename,
             mimetype=file.content_type or "",
             
-        )
-        new_text=text.lower()
-        duplicate=_check_duplicate(db=db,org_id=org_id,dept_id=dept_id,new_text=new_text,threshold=0.8)
-        if duplicate:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Duplicate document detected: {duplicate.title} (ID: {duplicate.id})",
-            )
-        compdoc=CompareDoc()
-        m= compdoc.create_minhash(text)
-        doc_hash=pickle.dumps(m)
+              )
+            new_text=text.lower()
+        # duplicate=_check_duplicate(db=db,org_id=org_id,dept_id=dept_id,new_text=new_text,threshold=0.8)
+        # if duplicate:
+        #     raise HTTPException(
+        #         status_code=409,
+        #         detail=f"Duplicate document detected: {duplicate.title} (ID: {duplicate.id})",
+        #     )
+            compdoc=CompareDoc()
+            m= compdoc.create_minhash(text)
+            doc_hash=pickle.dumps(m)
 
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Cannot read file: {e}")
+         except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failiure")
 
     # 6) Chunk text
 
-    chunks = chunk_text(docs=docs, max_tokens=512, overlap=120)
+         chunks = chunk_text(docs=docs, max_tokens=512, overlap=120)
     # print("chunks",chunks)
-    if not chunks:
-        raise HTTPException(status_code=400, detail="No text content in file")
+         if not chunks:
+            raise HTTPException(status_code=400, detail="Failiure")
     
 
-    doc_bytes=base64.b64encode(payload)
-    if scope==ScopeEnum.global_scope:
-        doc_scope="global"
-    else:
-        doc_scope="department"
-    doc = OrgDocument(
+         doc_bytes=base64.b64encode(payload)
+    # if scope==ScopeEnum.global_scope:
+    #     doc_scope="global"
+    # else:
+    #     doc_scope="department"
+         doc = OrgDocument(
         org_id=org_id,
-        dept_id=dept_id,
+        
         uploaded_by=current.id,
         title=file.filename,
         tag= tag,
@@ -230,15 +267,22 @@ async def upload_org_document(
         file_bytes=doc_bytes,
         hash_bytes=doc_hash
 
-    )
-    db.add(doc)
-    db.flush()  # doc.id becomes available
+            )
+         if doc_scope=="global":
+            doc.dept_id=None
+         else:
+            doc.dept_id=dept_id
+         db.add(doc)
+         db.flush()  # doc.id becomes available
     # await session.flush()  
-    
-    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{dept_id}")
-    vectorStore.add_documents(documents=chunks,document_id=doc.id)
+         if doc_scope=="department":
+            vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{dept_id}")
+            vectorStore.add_documents(documents=chunks,document_id=doc.id)
+         else:
+            vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}")
+            vectorStore.add_documents(documents=chunks,document_id=doc.id)
 
-    db.add_all(
+         db.add_all(
         [
             DocChunk(
                 document_id=doc.id,
@@ -247,33 +291,39 @@ async def upload_org_document(
             )
             for i, chunk in enumerate(chunks)
         ]
-    )
-    db.commit()
-    db.refresh(doc)
+        )
+         db.commit()
+         db.refresh(doc)
 
     e=time.monotonic()
-    return {
-        "doc": {
-            "id": doc.id,
-            "title": doc.title,
-            "filename": doc.filename,
-            "mime_type": doc.mime_type,
-            "chunks": len(chunks),
-        },
-        "department": {"org_id": org_id, "dept_id": dept_id},
-        "upload_time_taken":e-s
-    }
+    return JSONResponse(
+        status_code=200,
+        content={"message": "document uploaded successfully","upload_time":e-s,"number_of_files":len(files)},
+    )
+    # return {
+    #     "doc": {
+    #         "id": doc.id,
+    #         "title": doc.title,
+    #         "filename": doc.filename,
+    #         "mime_type": doc.mime_type,
+    #         "chunks": len(chunks),
+    #     },
+    #     "department": {"org_id": org_id, "dept_id": dept_id},
+    #     "upload_time_taken":e-s,
+    #     "number_of_files":len(files)
+
+    # }
 
 
-def _ensure_org_admin(db:Session,current_user: UserModel,org_id:int) -> None:
-    """
-    Only admins of the SAME org can manage access for that org.
-    """
-    dom=db.query(UserAccessDepartment).filter(UserAccessDepartment.org_id==org_id,UserAccessDepartment.user_id==current_user.id,UserAccessDepartment.user_type==UserType.ADMIN).first()
+# def _ensure_org_admin(db:Session,current_user: UserModel,org_id:int) -> None:
+#     """
+#     Only admins of the SAME org can manage access for that org.
+#     """
+#     dom=db.query(UserAccessDepartment).filter(UserAccessDepartment.org_id==org_id,UserAccessDepartment.user_id==current_user.id,UserAccessDepartment.user_type==UserType.ADMIN).first()
     
-    if not dom:
-        raise HTTPException(status_code=403, detail="Only the organization admin can delete this document")
-    return dom
+#     if not dom:
+#         raise HTTPException(status_code=403, detail="Only the organization admin can delete this document")
+#     return dom
 @router.delete(
     "/{document_id}",
     summary="Delete document (and its chunks)",

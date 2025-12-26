@@ -61,6 +61,7 @@ def list_organizations(
 @router.get("/{org_id}", status_code=status.HTTP_200_OK)
 def get_organization(org_id: int, db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_active_user)):
     org = db.query(OrganizationModel).filter(OrganizationModel.id == org_id).first()
+    # print("org",current_user.org_id)
     if not org: raise HTTPException(status_code=404, detail="Organization not found")
     return _org_public(org)
 
