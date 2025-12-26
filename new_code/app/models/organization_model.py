@@ -14,6 +14,7 @@ class Organization(Base):
     # Optional org profile fields (you already created these)
     website_url = Column(String(512))
     industry = Column(String(128))
+    country = Column(String(128))
     company_size = Column(String(64))
     social_handles = Column(JSON)
     is_active = Column(Boolean, default=True)
@@ -27,12 +28,12 @@ class Organization(Base):
 )
 
 # auto calculated: licenses * 100000
-    total_token = Column(Integer, Computed("total_licenses * 100000", persisted=True))
+    total_tokens = Column(Integer, Computed("total_licenses * 100000", persisted=True))
 
-    used_token = Column(Integer, nullable=False, server_default="0")
+    used_tokens = Column(Integer, nullable=False, server_default="0")
 
-# auto calculated: total_token - used_token
-    balance_token = Column(Integer, Computed("total_token - used_token", persisted=True))
+# auto calculated: total_tokens - used_tokens
+    balance_tokens = Column(Integer, Computed("total_tokens - used_tokens", persisted=True))
 
     created_at = Column(DateTime, server_default=func.now())
 

@@ -42,9 +42,9 @@ def list_Departments(skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, l
                           db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_active_user)):
     try:
         if org_id is not None:
-            if not db.query(OrganizationModel).filter(OrganizationModel.id == org_id).first():
+            if not db.query(OrganizationModel).filter(OrganizationModel.id == current_user.org_id).first():
                 raise HTTPException(status_code=404, detail="Organization ID not found")
-        q = db.query(DepartmentModel)
+        q = db.query(DepartmentModel).filter(DepartmentModel.org_id == current_user.org_id)
         if org_id is not None: q = q.filter(DepartmentModel.org_id == org_id)
         if is_active is not None: q = q.filter(DepartmentModel.is_active == is_active)
         return [_sub_public(s) for s in q.offset(skip).limit(limit).all()]

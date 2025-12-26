@@ -10,7 +10,7 @@ from pydantic import BaseModel,Field
 from app.database import get_db
 from app.services.auth import get_current_active_user,get_current_active_socket_user
 from app.models.user_model import User as UserModel
-from app.models.user_access_department_model import UserAccessDepartment
+from app.models.user_access_department_model import UserAccessDepartment,UserType
 from app.models.department_model import Department as DepartmentModel
 from app.models.doc_models import DocChunk                   #  from doc_models
 # from app.models.org_document_model import OrgDocument       #  from org_document_model
@@ -208,7 +208,7 @@ builder=(StateGraph(ChatState)
        .add_edge("chat_node", END)
        .compile)
 
-with PyMySQLSaver.from_conn_string(conn_string=os.getenv("DATABASE_URL")) as cp:
+with PyMySQLSaver.from_conn_string(conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")) as cp:
      
      cp.setup()
 
@@ -380,6 +380,17 @@ def dict_to_document(data: dict) -> Document:
 def documents_to_dicts(docs: list[Document]) -> list[dict]:
     return [document_to_dict(doc) for doc in docs]
 
+
+def _is_org_admin(db: Session, user: UserModel, org_id: int) -> bool:
+    admin=db.query(UserModel).filter(
+        UserModel.id==user.id,  UserAccessDepartment.org_id==org_id,
+        UserAccessDepartment.user_type==UserType.ADMIN
+    ).first()
+    return admin
+    
+
+
+
 @router.get("/list_user_threads")
 def list_threads(db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user),
@@ -415,6 +426,11 @@ def cited(job_id):
         "result": job.result,
         
     }
+
+def _list_of_departments(db:Session,current_user:UserModel)->Dict:
+    departments=db.query(DepartmentModel).filter(DepartmentModel.org_id==current_user.org_id).all()
+    return [s.id for s in departments]
+
 @router.post("/ask/{thread_id}", summary="Ask a question over allowed departments")
 def ask(
     thread_id:int,
@@ -426,8 +442,12 @@ def ask(
     s=time.monotonic()
     # if not _can_read(db, current_user, org_id, dept_id):
     #     raise HTTPException(status_code=403, detail="No read access to this department")
-
-    user_allowed_dept_ids=list_user_access(user_id=current_user.id,org_id=data.org_id,db=db)
+    print(data,thread_id,current_user.id,current_user.org_id)
+    admin=_is_org_admin(db,current_user,data.org_id)
+    if admin :
+        user_allowed_dept_ids=_list_of_departments(db,current_user)
+    else : 
+        user_allowed_dept_ids=list_user_access(user_id=current_user.id,org_id=data.org_id,db=db)
     print("all sub org ids",user_allowed_dept_ids)
     if not user_allowed_dept_ids:
            raise HTTPException(status_code=403, detail="No acces to any department")
@@ -441,32 +461,36 @@ def ask(
         vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{data.org_id}/dept/{dept_id}")
         rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=data.top_k)
         retrieval_list.append(rv)
-
-        
+    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{data.org_id}")
+    rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type='similarity',top_n=data.top_k)
+    retrieval_list.append(rv)   
     rvm= EnsembleRetriever(retrievers=retrieval_list)
     docs_list=rvm.invoke(input=data.q)
+    # print("docs_list",docs_list)
    
-    with PyMySQLSaver.from_conn_string(conn_string=os.getenv("DATABASE_URL")) as checkpointer:
+    with PyMySQLSaver.from_conn_string(conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")) as checkpointer:
              chatbot=builder(checkpointer=checkpointer)
+             print(type(thread_id),thread_id)
              config={"configurable":{"thread_id":thread_id}}
     
              answer=chatbot.invoke({"messages":data.q,"context":docs_list},config=config)
+            #  print("answer",answer)
 
     
     siz=sys.getsizeof(rvm)
 
     output=json.loads(answer['messages'][-1].content)
     e=time.monotonic()
-    print("response time",e-s)
+    # print("response time",e-s)
     # print("output",output)
     s1=time.monotonic()
     serialize_doc_list=documents_to_dicts(docs_list)
     # my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
     # print(my_link)
     links=filter_sources_by_citation.delay(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
-    # links=q.enqueue(filter_sources_by_citation,citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
-    # links=q.enqueue(hello,2,3)
-    print("links",links.id)
+    # # links=q.enqueue(filter_sources_by_citation,citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
+    # # links=q.enqueue(hello,2,3)
+    # print("links",links.id)
     #bt.add_task(create_link_for_citation,db,current_user,citations=output['citation'],sources=docs_list)
     print("time1",time.monotonic()-s1)
 
@@ -482,7 +506,7 @@ def ask(
     print("time2",time.monotonic()-s1)
     print("total time",time.monotonic()-s)
     # print(cit)
-    return {"query_time":e-s,"response":output['response'],"citations":output['citation'],"total_token":answer['total_token'],"source":docs_list,"size":siz,"job_id":links.id}
+    return {"query_time":e-s,"response":output['response'],"citations":output['citation'],"total_token":answer['total_token'],"job_id":links.id}
     # return {"query_time":e-s,"response":output['response'],"html_response":output['html_response'],"citations":output['citation'],"total_token":answer['total_token'],"is_context_available":output['is_context_availale']}
     # return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list,"size":siz}
 
@@ -491,8 +515,30 @@ def _get_suborg_by_document_id(db:Session,document_id_list:list[int]):
      dept_id=db.query(OrgDocument.id,OrgDocument.dept_id).filter(OrgDocument.id.in_(document_id_list)).all()
      return dept_id
 
+@router.get("/chat_history/{thread_id}",summary="Get chat history by thread id")
+def get_chat_history(  
+    thread_id:int,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user)):
+    print("thread id",thread_id)
+    print("current user",current_user.id)
+    print("current org",current_user.org_id)
+    chat_history=db.query(ChatMessage).filter(ChatMessage.thread_id==thread_id,
+                                ChatMessage.user_id==current_user.id,ChatMessage.org_id==current_user.org_id).all()
+    output=[]
+    for chat in chat_history:
+         print(chat.id)
+         output.append({
+            "id":chat.id,
+            "query":chat.query,
+            "response":chat.response,
+            "tokens":chat.tokens,
+            "citation":chat.citation,
+            "created_at":chat.created_at
+         })
+    return {"chat_history":output}
 
-@router.post("/ask/{thread_id}/doocuments", summary="Ask a question over allowed departments over perticular document")
+@router.post("/ask/{thread_id}/documents", summary="Ask a question over allowed departments over perticular document")
 def ask_by_id(
     thread_id:int,
     data:AskRequestOnDocument,
@@ -527,7 +573,7 @@ def ask_by_id(
     rvm= EnsembleRetriever(retrievers=retrieval_list)
     docs_list=rvm.invoke(input=data.q)
        
-    with PyMySQLSaver.from_conn_string(conn_string=os.getenv("DATABASE_URL")) as checkpointer:
+    with PyMySQLSaver.from_conn_string(conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")) as checkpointer:
              chatbot=builder(checkpointer=checkpointer)
              config={"configurable":{"thread_id":thread_id}}
     

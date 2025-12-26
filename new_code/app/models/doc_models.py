@@ -30,17 +30,17 @@ from enum import Enum as PyEnum
 
 
 class ScopeType(str, PyEnum):
-    ORG = "ORG"
-    DEPT = "DEPT"
+    department = "department"
+    global_scope = "global"
    
 
 class OrgDocument(Base):
     __tablename__ = "org_documents"
     id = Column(Integer, primary_key=True, index=True)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
-    dept_id=Column(Integer,ForeignKey("departments.id",ondelete="CASCADE"),nullable=False)
+    dept_id=Column(Integer,ForeignKey("departments.id",ondelete="CASCADE"),nullable=True)
     uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
-    scope=Column(SAEnum(ScopeType),nullable=False,default=ScopeType.DEPT)
+    scope=Column(SAEnum(ScopeType),nullable=False,default=ScopeType.department)
     tag=Column(String(256),nullable=True)
     title = Column(String(512), nullable=False)
     filename = Column(String(512), nullable=False)

@@ -11,7 +11,7 @@ class OptionEnum(str, Enum):
 class AskRequest(BaseModel):
 
     org_id: int
-    user_id: int
+
     q: str
     top_k:int
 
