@@ -57,3 +57,25 @@ def validate_upload_file(file: UploadFile):
     #     )
 
     return True
+from html.parser import HTMLParser
+from typing import List
+
+class TextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.texts = []
+
+    def handle_data(self, data):
+        text = data.strip()
+        if text:
+            self.texts.append(text)
+
+def extract_text_only_from_html(html_response: List[dict]) -> str:
+    result = []
+
+    for item in html_response:
+        parser = TextExtractor()
+        parser.feed(item["content"])
+        result.append(" ".join(parser.texts))
+
+    return " ".join(result)
