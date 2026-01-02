@@ -184,6 +184,7 @@ async def upload_org_document(
     if not dept_id:
         _ensure_org_admin(db=db,current_user=current,org_id=org_id)
         doc_scope="global"
+        print("global scope")
         
     else:
        
@@ -210,11 +211,11 @@ async def upload_org_document(
 
          payload = await file.read()
          if not payload:
-            raise HTTPException(status_code=400, detail="Failiure")
+            raise HTTPException(status_code=400, detail="No text in File")
          if len(payload) > MAX_FILE_BYTES:
             raise HTTPException(
             status_code=413,
-            detail="Failiure",
+            detail="File too large. Max size is 5 MB.",
             )
 
     # 5) Extract text
@@ -228,25 +229,25 @@ async def upload_org_document(
             
               )
             new_text=text.lower()
-        # duplicate=_check_duplicate(db=db,org_id=org_id,dept_id=dept_id,new_text=new_text,threshold=0.8)
-        # if duplicate:
-        #     raise HTTPException(
-        #         status_code=409,
-        #         detail=f"Duplicate document detected: {duplicate.title} (ID: {duplicate.id})",
-        #     )
+            duplicate=_check_duplicate(db=db,org_id=org_id,dept_id=dept_id,new_text=new_text,threshold=0.8)
+            if duplicate:
+               raise HTTPException(
+                status_code=409,
+                detail=f"Duplicate document detected: {duplicate.title} (ID: {duplicate.id})",
+            )
             compdoc=CompareDoc()
             m= compdoc.create_minhash(text)
             doc_hash=pickle.dumps(m)
 
          except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failiure")
+            raise HTTPException(status_code=400, detail=f"Error extracting text: {str(e)}")
 
     # 6) Chunk text
 
          chunks = chunk_text(docs=docs, max_tokens=512, overlap=120)
     # print("chunks",chunks)
          if not chunks:
-            raise HTTPException(status_code=400, detail="Failiure")
+            raise HTTPException(status_code=400, detail="No text chunks extracted from document")
     
 
          doc_bytes=base64.b64encode(payload)

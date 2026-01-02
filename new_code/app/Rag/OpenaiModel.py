@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from langchain_core.output_parsers import PydanticOutputParser
 class OpenaiModel():
       def __init__(self):
-            self.llm=ChatOpenAI(model_name="gpt-4.1", temperature=0,api_key=os.getenv('OPENAI_API_KEY'),streaming=False)
+            self.llm=ChatOpenAI(model_name="gpt-4.1", temperature=1,api_key=os.getenv('OPENAI_API_KEY'),streaming=False)
             self.prompt=None
             self.model_response=None
    
