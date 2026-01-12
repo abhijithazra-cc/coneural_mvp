@@ -1,7 +1,4 @@
-*.env
-*.pyc
-API_Creation_Backends/*
-Rags/*
-env/
-new_code/faiss_indexe/
-./app.py
+newcode/.venv/
+__pycache__/
+newcode/*.pyc
+newcode/.env

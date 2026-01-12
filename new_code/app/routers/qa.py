@@ -646,16 +646,20 @@ def ask(
         top_n=data.top_k,
     )
     retrieval_list.append(rv)
+    print("test time", time.monotonic() - s)
     rvm = EnsembleRetriever(retrievers=retrieval_list)
     docs_list = rvm.invoke(input=data.q)
+ 
+    print("context extracton time", time.monotonic() - s)
+    
     ss = time.monotonic()
     masking_state = PiiMaskingState()
     masking = Masking()
     masked_docs = masking.mask_texts(docs_list, masking_state)
     print("masking time", time.monotonic() - ss)
     print("org_docs_list", docs_list)
-    print("mask_docs_list", masked_docs)
-    print("context extracton time", time.monotonic() - s)
+    # print("mask_docs_list", masked_docs)
+    
     s1 = time.monotonic()
     with PyMySQLSaver.from_conn_string(
         conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
@@ -670,20 +674,21 @@ def ask(
     #  print("answer",answer)
 
     siz = sys.getsizeof(rvm)
-    # print("output",answer['messages'][-1].content)
+    print("output",answer['messages'][-1].content)
     output = json.loads(answer["messages"][-1].content)
     e = time.monotonic()
     # print("response time",e-s)
     # print("output",output)
     # s1=time.monotonic()
     serialize_doc_list = documents_to_dicts(docs_list)
-    # my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
+    print("output citation",output['citation'])
+    my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
     # print(my_link)
-    links = filter_sources_by_citation.delay(
-        citations=output["citation"],
-        org_id=current_user.org_id,
-        sources=serialize_doc_list,
-    )
+    # links = filter_sources_by_citation.delay(
+    #     citations=output["citation"],
+    #     org_id=current_user.org_id,
+    #     sources=serialize_doc_list,
+    # )
     # # links=q.enqueue(filter_sources_by_citation,citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
     # # links=q.enqueue(hello,2,3)
     # print("links",links.id)
@@ -701,6 +706,7 @@ def ask(
             org_id=data.org_id,
             tokens=answer["total_token"],
             citation=output["citation"],
+            html_response=output["html_response"],
             unanswer_query=False,
         )
     else:
@@ -712,6 +718,7 @@ def ask(
             org_id=data.org_id,
             tokens=answer["total_token"],
             citation=output["citation"],
+            html_response=output["html_response"],  
             unanswer_query=True,
         )
     db.add(chat_message)
@@ -727,7 +734,8 @@ def ask(
         "response": llm_response,
         "citations": output["citation"],
         "total_token": answer["total_token"],
-        "job_id": links.id,
+     
+        "links": my_link,
     }
     # return {"query_time":e-s,"response":output['response'],"html_response":output['html_response'],"citations":output['citation'],"total_token":answer['total_token'],"is_context_available":output['is_context_availale']}
     # return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list,"size":siz}
@@ -777,6 +785,7 @@ def get_chat_history(
                 "id": msg.id,
                 "query": msg.query,
                 "response": msg.response,
+                "html_response": msg.html_response ,
             }
         )
     return {"message": response, "next_id": new_next_id, "has_more": has_more}
@@ -853,6 +862,7 @@ def ask_by_id(
     rvm = EnsembleRetriever(retrievers=retrieval_list)
     docs_list = rvm.invoke(input=data.q)
 
+    # print("docs_list", docs_list)
     with PyMySQLSaver.from_conn_string(
         conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
     ) as checkpointer:
