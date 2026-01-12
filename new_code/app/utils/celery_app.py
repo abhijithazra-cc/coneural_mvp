@@ -1,3 +1,4 @@
+import os
 from celery import Celery
 # app/routers/qa.py
 
@@ -17,7 +18,7 @@ def _get_doc_by_id(db,org_id,document_id):
      docs=db.query(OrgDocument).filter(OrgDocument.org_id==org_id,OrgDocument.id==document_id)
      for u in docs:
           print("type u",type(u.file_bytes))
-          return u.file_bytes 
+          return u.file_bytes ,u.title
 
 
 @celery_app.task
@@ -27,7 +28,7 @@ def heavy_function(x):
     return x * 2
 
 
-@celery_app.task
+# @celery_app.task
 def filter_sources_by_citation(citations,org_id, sources):
     # 1. Extract all filenames mentioned after "citation"
     # Example fragment: "citation1: virat kohli 4.pdf"
@@ -37,7 +38,7 @@ def filter_sources_by_citation(citations,org_id, sources):
     db = SessionLocal()
     # current_user = get_current_active_user()
     cited_files = [f.strip() for f in citations]
-    print(cited_files)
+    # print(cited_files)
     result = {}
 
     # 2. Filter sources matching the cited filenames
@@ -50,7 +51,8 @@ def filter_sources_by_citation(citations,org_id, sources):
         if filename in cited_files:
             document_id = src['metadata']["document_id"]
             page_content = src['page_content']
-            print("document_id",document_id)
+            # print("document_id",document_id)
+            print("hi")
             if document_id not in result:
                  result[document_id] = {
                     "filename": filename,
@@ -65,7 +67,8 @@ def filter_sources_by_citation(citations,org_id, sources):
     output=[]
     for document_id,items in result.items():
             
-            my_doc_bytes=_get_doc_by_id(db=db,org_id=org_id,document_id=document_id)
+            my_doc_bytes,title=_get_doc_by_id(db=db,org_id=org_id,document_id=document_id)
+            print("doc_id",document_id,"my_doc_bytes type",type(my_doc_bytes))
             # docs=_get_doc_by_id(db,current_user,document_id)
             # full_doc=""
             # for doc in docs:
@@ -84,11 +87,12 @@ def filter_sources_by_citation(citations,org_id, sources):
             # with open('my_pdf.pdf',mode='wb') as f:
             #       f.write(my_bytes)
             # my_bytes=base64.b64encode(my_bytes).decode()
-            response=upload_pdf_to_github(file_name=items['filename'],owner="rahulkumarcollectcent",token="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",folder='uploads',repo='pdf-viewer',pdf_bytes=my_bytes)
+            response=upload_pdf_to_github(file_name=items['filename'],owner="rahulkumarcollectcent",token="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",folder='uploads',repo='pdf-viewer',pdf_bytes=my_bytes)
             # print(response)
             
             result[document_id]['link']=response['link']
-            output.append({"filename":result[document_id]['filename'],"link":result[document_id]['link'],"document_id":document_id})
+            # print("github token",response['github_token'])
+            output.append({"filename":title,"link":result[document_id]['link'],"document_id":document_id})
             # print(my_bytes)
     # print("result",result)
     return output

@@ -5,7 +5,7 @@ import io
 from typing import Optional
 
 from fastapi.responses import JSONResponse
-from prometheus_client import Enum
+# from prometheus_client import Enum
 from app.Rag.VectorManager import vectorManager
 import numpy as np
 from fastapi import (
@@ -220,11 +220,11 @@ async def upload_org_document(
 
     # 5) Extract text
          try:
-
-        
+            str_time=str(time.time()).replace(".","")
+            filename=str(org_id)+"_"+str(current.id)+"_"+str_time+"_"+file.filename
             text,docs = extract_text(
             payload,
-            filename=file.filename,
+            filename=filename,
             mimetype=file.content_type or "",
             
               )
@@ -245,7 +245,7 @@ async def upload_org_document(
     # 6) Chunk text
 
          chunks = chunk_text(docs=docs, max_tokens=512, overlap=120)
-    # print("chunks",chunks)
+         print("chunks",chunks)
          if not chunks:
             raise HTTPException(status_code=400, detail="No text chunks extracted from document")
     
@@ -255,6 +255,7 @@ async def upload_org_document(
     #     doc_scope="global"
     # else:
     #     doc_scope="department"
+         
          doc = OrgDocument(
         org_id=org_id,
         
@@ -262,7 +263,7 @@ async def upload_org_document(
         title=file.filename,
         tag= tag,
         scope=doc_scope,
-        filename=file.filename,
+        filename=filename,
         mime_type=file.content_type or "application/octet-stream",
         size_bytes=len(payload),
         file_bytes=doc_bytes,
@@ -346,7 +347,7 @@ def delete_org_document(
     db.delete(doc)
     db.commit()
     
-    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\{current.org_id}\dept\{doc.dept_id}")
+    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{current.org_id}/dept/{doc.dept_id}")
     vectorStore.delete_document_by_id(document_id=document_id)
     # vectorManager.load_store(persist_dir=f"{BASE_DIR}\{current.org_id}\dept\{doc.dept_id}")
     # NOTE: We are not removing from FAISS index here; next time you rebuild index

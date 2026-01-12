@@ -11,10 +11,10 @@ pydantic-settings==2.6.1
 email-validator==2.2.0         # needed for EmailStr
 
 python-multipart==0.0.9
-
+pympler==1.0.1
 passlib==1.7.4
 bcrypt==4.0.1                  # works well with passlib on Windows
-
+python-multipart
 python-jose[cryptography]==3.3.0
 
 openai==1.51.2
@@ -29,10 +29,12 @@ langchain
 langchain-core
 langchain-openai
 langchain-classic
+langchain-experimental
 pympler
 PyMuPDF
 pytesseract
 rq
+pypdf
 redis
 langgraph
 langgraph-checkpoint-mysql
@@ -40,3 +42,6 @@ reportlab
 python-pptx
 img2pdf
 spire.pdf
+celery
+datasketch
+presidio-analyzer

@@ -25,6 +25,7 @@ def upload_pdf_to_github(
         raise ValueError("Provide pdf_bytes, pdf_base64 or file_path")
 
     api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{folder}/{file_name}"
+    # print("github token",token)
     headers = {"Authorization": f"token {token}", "Content-Type": "application/json"}
 
     # 🔍 STEP 1: Check if the file already exists → get SHA for overwrite
@@ -58,5 +59,6 @@ def upload_pdf_to_github(
 
     return {
         "link": cdn_link,
+    
         
     }

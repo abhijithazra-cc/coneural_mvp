@@ -26,4 +26,5 @@ class ChatMessage(Base):
     tokens=Column(Integer,default=0)
     citation=Column(JSON,nullable=True)
     device_type=Column(SAEnum(DeviceType), nullable=False, default=DeviceType.WEB)
+    html_response=Column(JSON,nullable=True)
     created_at = Column(DateTime, server_default=func.now())

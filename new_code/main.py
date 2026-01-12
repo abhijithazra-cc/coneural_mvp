@@ -8,20 +8,20 @@ from app.database import Base, engine
 # 🔹 Import all models so SQLAlchemy sees every table + foreign key
 import app.models  # noqa: F401
 from fastapi import FastAPI
-from fastapi_users import FastAPIUsers
-from fastapi_users import fastapi_users
-from fastapi_users.db import SQLAlchemyUserDatabase
+# from fastapi_users import FastAPIUsers
+# from fastapi_users import fastapi_users
+# from fastapi_users.db import SQLAlchemyUserDatabase
 
-from fastapi_users import schemas
+# from fastapi_users import schemas
 
-class User(schemas.BaseUser):
-    pass  # Add extra fields here if you want, e.g., full_name, role
+# class User(schemas.BaseUser):
+#     pass  # Add extra fields here if you want, e.g., full_name, role
 
-class UserCreate(schemas.BaseUserCreate):
-    pass
+# class UserCreate(schemas.BaseUserCreate):
+#     pass
 
-class UserUpdate(schemas.BaseUserUpdate):
-    pass
+# class UserUpdate(schemas.BaseUserUpdate):
+#     pass
 
 
 
