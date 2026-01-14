@@ -155,7 +155,24 @@ class HtmlItem(BaseModel):
         ..., description=("Content for this tag. " "Must match the purpose of the tag.")
     )
 
+class SuggestedFollowUpQuestions(BaseModel):
+    """
+    Always include exactly 3 short and relevant follow-up questions.
+    Questions must relate to the same topic or documents.
+    Do not assume information outside the provided context.
+    Do not include answers.
+    """
 
+    tag: str = Field(
+        default="ul",
+        description="HTML container tag (example: ul, ol, div)"
+    )
+    content: str = Field(
+        ...,
+        min_items=3,
+        max_items=3,
+        description="Exactly 3 list items rendered as <li>"
+    )
 class RAGResponse(BaseModel):
     html_response: List[HtmlItem] = Field(
         ...,
@@ -175,6 +192,7 @@ class RAGResponse(BaseModel):
     is_context_availale: Literal["True", "False"] = Field(
         ..., description="Whether answer was generated from provided context"
     )
+    suggested_follow_ups: SuggestedFollowUpQuestions = Field(..., description="Three relevant follow-up questions")
 
 
 import uuid
@@ -559,19 +577,54 @@ def ask_thread(
 #         "next_cursor": next_cursor,
 #         "has_more": has_more
 #     }
+from fastapi.responses import StreamingResponse
+import io
+from app.models.user_access_department_model import UserAccessDepartment 
+def _check_user_access_to_document(db: Session, current_user: UserModel, document_id: int):
+    isadmin=db.query(UserAccessDepartment).filter(
+        UserAccessDepartment.user_id==current_user.id,
+        UserAccessDepartment.user_type==UserType.ADMIN
+    ).first()
+    if isadmin:
+        return
+    access=db.query(UserAccessDepartment).join(
+        OrgDocument,
+        UserAccessDepartment.dept_id == OrgDocument.dept_id
+    ).filter(
+        UserAccessDepartment.user_id == current_user.id,
+        OrgDocument.id == document_id
+    ).first()
+    if not access:
+        raise HTTPException(status_code=403, detail="No access to this document")
 
 
-@router.post("/get_citated_link")
-def cited(job_id):
-    job = AsyncResult(job_id, app=celery_app)
-    print(job)
-    print(job.result)
+@router.get("/pdf/{id}", summary="Get citated link by id")
+def cited(db: Session = Depends(get_db), current_user: UserModel=Depends(get_current_active_user), id: str = ""):
+    job = AsyncResult(id, app=celery_app)
+    while True:
+        if job.status == "FAILURE":
+          raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to process the citation links.",
+          )
 
-    return {
-        "id": job_id,
-        "status": job.status,
-        "result": job.result,
-    }
+        if job.state == "SUCCESS":
+            break
+
+        # ⏳ Keep connection open, do NOTHING
+        time.sleep(1)
+    if job.status == "SUCCESS":
+        if job.result:
+            doc_id=job.result['document_id']
+            print("doc_id",doc_id)
+            _check_user_access_to_document(db=db, current_user=current_user, document_id=doc_id)
+            pdf_bytes=base64.b64decode(job.result['pdf'])
+        return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf",headers={"Content-Disposition": f"inline"})
+    # return {
+    #     "id": id,
+    #     "status": job.status,
+    #     "result": job.result,
+    # }
 
 
 def _list_of_departments(db: Session, current_user: UserModel) -> Dict:
@@ -597,6 +650,9 @@ def _is_org_exist(db: Session, org_id: int) -> bool:
 
 
 from app.Rag.Masking import Masking, PiiMaskingState
+
+
+
 
 
 @router.post("/ask/{thread_id}", summary="Ask a question over allowed departments")
@@ -683,6 +739,7 @@ def ask(
     serialize_doc_list = documents_to_dicts(docs_list)
     print("output citation",output['citation'])
     my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
+
     # print(my_link)
     # links = filter_sources_by_citation.delay(
     #     citations=output["citation"],
@@ -705,7 +762,7 @@ def ask(
             user_id=current_user.id,
             org_id=data.org_id,
             tokens=answer["total_token"],
-            citation=output["citation"],
+            citation=my_link,
             html_response=output["html_response"],
             unanswer_query=False,
         )
@@ -717,13 +774,17 @@ def ask(
             user_id=current_user.id,
             org_id=data.org_id,
             tokens=answer["total_token"],
-            citation=output["citation"],
+            citation=my_link,
             html_response=output["html_response"],  
             unanswer_query=True,
         )
     db.add(chat_message)
     db.commit()
-
+    output['html_response'].append({
+        "tag":"h1",
+        "content":"Suggested Follow Up Questions"
+    })
+    output['html_response'].append(output['suggested_follow_ups'])
     # cit=create_link_for_citation(db,current_user,citations=output['citation'],sources=docs_list)
     print("model response time", time.monotonic() - s1)
     print("total time", time.monotonic() - s)
@@ -785,7 +846,8 @@ def get_chat_history(
                 "id": msg.id,
                 "query": msg.query,
                 "response": msg.response,
-                "html_response": msg.html_response ,
+                "html_response": msg.html_response,
+                "links": msg.citation,
             }
         )
     return {"message": response, "next_id": new_next_id, "has_more": has_more}
