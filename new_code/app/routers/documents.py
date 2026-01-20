@@ -1,12 +1,14 @@
 # app/routers/documents.py
 
+from dataclasses import Field
 from enum import Enum
 import io
-from typing import Optional
+from typing import List, Optional
 
 from fastapi.responses import JSONResponse
 # from prometheus_client import Enum
 from app.Rag.VectorManager import vectorManager
+from app.models.chat_thread_model import ChatThreads
 import numpy as np
 from fastapi import (
     APIRouter,
@@ -20,6 +22,10 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from pydantic import BaseModel, Field
+from fastapi import Query
+
+from typing import Any, List, Optional
 from app.models.user_model import User as UserModel
 from app.models.doc_models import OrgDocument, DocChunk
 from app.models.department_model import Department
@@ -140,6 +146,73 @@ def _ensure_org_admin_or_dept_admin_or_author(db: Session, current_user: UserMod
             status_code=403,
             detail="Only the organization admin or department admin or department author can perform this action",
         )
+
+def _ensure_same_org(current: UserModel, org_id: int) -> None:
+    if getattr(current, "org_id", None) != org_id:
+        raise HTTPException(status_code=403, detail="User does not belong to this organization")
+
+
+def _get_dept_access(db: Session, user_id: int, org_id: int, dept_id: int) -> Optional[UserAccessDepartment]:
+    return (
+        db.query(UserAccessDepartment)
+        .filter(
+            UserAccessDepartment.user_id == user_id,
+            UserAccessDepartment.org_id == org_id,
+            UserAccessDepartment.dept_id == dept_id,
+        )
+        .first()
+    )
+def _is_org_admin(db: Session, user_id: int, org_id: int) -> bool:
+    row = (
+        db.query(UserAccessDepartment)
+        .filter(
+            UserAccessDepartment.user_id == user_id,
+            UserAccessDepartment.org_id == org_id,
+            UserAccessDepartment.dept_id.is_(None),
+            UserAccessDepartment.user_type == UserType.ADMIN,
+        )
+        .first()
+    )
+    return row is not None
+
+def _is_org_admin(db: Session, user_id: int, org_id: int) -> bool:
+    row = (
+        db.query(UserAccessDepartment)
+        .filter(
+            UserAccessDepartment.user_id == user_id,
+            UserAccessDepartment.org_id == org_id,
+            UserAccessDepartment.dept_id.is_(None),
+            UserAccessDepartment.user_type == UserType.ADMIN,
+        )
+        .first()
+    )
+    return row is not None
+def _ensure_can_manage_global_docs(db: Session, current: UserModel, org_id: int) -> None:
+    """
+    Global docs: only Org Admin (recommended).
+    """
+    _ensure_same_org(current, org_id)
+    if not _is_org_admin(db, current.id, org_id):
+        raise HTTPException(status_code=403, detail="Only org admin can manage GLOBAL documents")
+def _ensure_can_manage_dept_docs(db: Session, current: UserModel, org_id: int, dept_id: int) -> None:
+    """
+    Can list/update/delete dept docs if:
+      - org admin OR
+      - dept_access.user_type in (DEPT_ADMIN, AUTHOR)
+    """
+    _ensure_same_org(current, org_id)
+
+    if _is_org_admin(db, current.id, org_id):
+        return
+
+    access = _get_dept_access(db, current.id, org_id, dept_id)
+    if not access:
+        raise HTTPException(status_code=403, detail="No access record for this department")
+
+    if access.user_type in (UserType.DEPT_ADMIN, UserType.AUTHOR):
+        return
+
+    raise HTTPException(status_code=403, detail="Only org admin, dept admin, or author can manage documents")
 
 
 from enum import Enum
@@ -279,10 +352,12 @@ async def upload_org_document(
     # await session.flush()  
          if doc_scope=="department":
             vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{dept_id}")
-            vectorStore.add_documents(documents=chunks,document_id=doc.id)
+            vectorStore.add_documents(documents=chunks,document_id=doc.id,dept_id=dept_id)
+            vs=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}")
+            vs.add_documents(documents=chunks,document_id=doc.id,dept_id=dept_id)
          else:
             vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}")
-            vectorStore.add_documents(documents=chunks,document_id=doc.id)
+            vectorStore.add_documents(documents=chunks,document_id=doc.id,dept_id='global')
 
          db.add_all(
         [
@@ -326,6 +401,124 @@ async def upload_org_document(
 #     if not dom:
 #         raise HTTPException(status_code=403, detail="Only the organization admin can delete this document")
 #     return dom
+
+class DocumentOut(BaseModel):
+    id: int
+    org_id: int
+    dept_id: Optional[int] = None
+    scope: str
+    title: str
+    filename: str
+    mime_type: str
+    size_bytes: int
+    uploaded_by: Optional[int] = None
+    tag: Optional[str] = None
+    created_at: Optional[Any] = None
+
+    class Config:
+        from_attributes = True
+
+
+class DocumentListResponse(BaseModel):
+    items: List[DocumentOut]
+    total: int
+    page: int
+    page_size: int
+
+
+class DocumentUpdateRequest(BaseModel):
+    title: Optional[str] = Field(None, max_length=512)
+    tag: Optional[str] = Field(None, max_length=128)
+@router.get(
+    "/list",
+    response_model=DocumentListResponse,
+    summary="List documents in a department (or global). Only org_admin/dept_admin/author.",
+)
+def list_documents(
+    org_id: int = Query(...),
+    scope: str = Query("dept", description="dept or global"),
+    dept_id: Optional[int] = Query(None, description="Required when scope=dept"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current: UserModel = Depends(get_current_active_user),
+):
+    scope_norm = (scope or "dept").strip().lower()
+    if scope_norm not in ("dept", "global"):
+        raise HTTPException(status_code=400, detail="scope must be dept or global")
+
+    if scope_norm == "global":
+        _ensure_can_manage_global_docs(db, current, org_id)
+        q = db.query(OrgDocument).filter(
+            OrgDocument.org_id == org_id,
+            OrgDocument.dept_id.is_(None),
+        )
+    else:
+        if dept_id is None:
+            raise HTTPException(status_code=400, detail="dept_id is required when scope=dept")
+        dept_id_int = int(dept_id)
+        _ensure_can_manage_dept_docs(db, current, org_id, dept_id_int)
+
+        q = db.query(OrgDocument).filter(
+            OrgDocument.org_id == org_id,
+            OrgDocument.dept_id == dept_id_int,
+        )
+
+    total = q.count()
+    rows = (
+        q.order_by(OrgDocument.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return DocumentListResponse(
+        items=[DocumentOut.model_validate(r, from_attributes=True) for r in rows],
+        total=int(total),
+        page=int(page),
+        page_size=int(page_size),
+    )
+
+
+# ───────────────────────── NEW: Update doc metadata ─────────────────────────
+
+@router.patch(
+    "/{doc_id}",
+    response_model=DocumentOut,
+    summary="Update document title/tag. Only org_admin/dept_admin/author.",
+)
+def update_document(
+    doc_id: int,
+    payload: DocumentUpdateRequest,
+    db: Session = Depends(get_db),
+    current: UserModel = Depends(get_current_active_user),
+):
+    doc = db.query(OrgDocument).filter(OrgDocument.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    _ensure_same_org(current, int(doc.org_id))
+
+    # ACL based on scope
+    if getattr(doc, "dept_id", None) is None:
+        _ensure_can_manage_global_docs(db, current, int(doc.org_id))
+    else:
+        _ensure_can_manage_dept_docs(db, current, int(doc.org_id), int(doc.dept_id))
+
+    if payload.title is not None:
+        doc.title = payload.title.strip() or doc.title
+    if payload.tag is not None:
+        doc.tag = payload.tag.strip() or None
+
+    db.commit()
+    db.refresh(doc)
+    return DocumentOut.model_validate(doc, from_attributes=True)
+
+
+
+
+
+
 @router.delete(
     "/{document_id}",
     summary="Delete document (and its chunks)",

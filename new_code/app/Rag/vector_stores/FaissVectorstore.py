@@ -44,7 +44,7 @@ class FaissVectorstore(IVectorstore):
     def get_vector_store(self):
         return self.vectorstore
     # ---------- Add documents ----------
-    def add_documents(self, documents,document_id):
+    def add_documents(self, documents,document_id,dept_id):
             store = self._load_or_create_store()
             # assign document_id metadata for deletion tracking
           #   document_id = str(uuid.uuid4())
@@ -53,7 +53,7 @@ class FaissVectorstore(IVectorstore):
             for c in documents:
                 c.metadata["document_id"] = document_id
                 c.metadata["date_time"]=now.isoformat()
-            self.document_id_list.append(document_id)
+                c.metadata["dept_id"] = dept_id
 
             store.add_documents(documents=documents)
             print(f"✅ Added {len(documents)} chunks (document_id={document_id})")

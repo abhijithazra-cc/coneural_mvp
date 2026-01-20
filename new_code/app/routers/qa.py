@@ -174,6 +174,7 @@ class SuggestedFollowUpQuestions(BaseModel):
         description="Exactly 3 list items rendered as <li>"
     )
 class RAGResponse(BaseModel):
+    title: str = Field(..., description="Title of chat on basis of chat history")
     html_response: List[HtmlItem] = Field(
         ...,
         description=(
@@ -226,9 +227,18 @@ def chat_node(state: ChatState):
     messages = state["messages"][-1]
     context = state["context"]
 
+    # response = llm.generate_stream_answer(
+    #     context=context, query=messages
+    # )
+
+    # response = llm.generate_stream_answer_with_structure(
+    #     context=context, query=messages, schema=HtmlItem
+    # )
+
     response = llm.generate_answer_with_structure(
         context=context, query=messages, schema=RAGResponse
     )
+    # print(response)
     total_token = response.usage_metadata["total_tokens"]
     return {"messages": [response], "total_token": total_token}
 
@@ -262,6 +272,7 @@ with PyMySQLSaver.from_conn_string(
 def _allowed_thread_id(db, current_user, t_id):
 
     threads = db.query(ChatThreads).filter(
+        
         ChatThreads.org_id == current_user.org_id,
         ChatThreads.user_id == current_user.id,
         ChatThreads.id == t_id,
@@ -270,6 +281,36 @@ def _allowed_thread_id(db, current_user, t_id):
     threads = [u.id for u in threads]
     return threads
 
+
+def update_chat_thread_description(
+    db: Session,
+    org_id: int,
+    user_id: int,
+    chat_thread_id: int,
+    description: str
+) -> None:
+    print(org_id,user_id,chat_thread_id,description)
+    chat_thread = db.query(ChatThreads).filter(
+            ChatThreads.id == chat_thread_id,
+            ChatThreads.user_id==user_id,
+            ChatThreads.org_id == org_id
+        ).first()
+    
+    print("chat_thread",type(chat_thread.description),(chat_thread.description))
+    # thread not found → do nothing
+    # if not chat_thread:
+    #     print("true")
+    #     return
+
+    # 🔑 description already set → DO NOT overwrite
+    if chat_thread.description :
+        return
+    # print("ggg",description)
+    # only NULL → update
+    chat_thread.description = description
+    db.add(chat_thread)
+    # print("updated description",chat_thread.description)
+    db.commit()
 
 import time
 import re
@@ -437,7 +478,7 @@ def _is_org_admin(db: Session, user: UserModel, org_id: int) -> bool:
             UserModel.id == user.id,
             UserAccessDepartment.org_id == org_id,
             UserAccessDepartment.user_type == UserType.ADMIN,
-        )
+        )   
         .first()
     )
     return admin
@@ -517,6 +558,69 @@ def delete_thread(
     db.commit()
     return {"message": "Thread deleted successfully"}
 
+@router.get("/title/{thread_id}", summary="Get thread title")
+def get_description(
+    thread_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user),
+):
+    thread = (
+        db.query(ChatThreads)
+        .filter(
+            ChatThreads.id == thread_id,
+            ChatThreads.org_id == current_user.org_id,
+            ChatThreads.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    return {"title": thread.description or ""}
+
+
+@router.get("/document_content/{document_id}", summary="Get document content by id")
+def get_document_content(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user),
+):
+    document = (
+        db.query(OrgDocument)
+        .filter(
+            
+            OrgDocument.id == document_id,
+            OrgDocument.org_id == current_user.org_id,
+        )
+        .first()
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    pdf_bytes = base64.b64decode(document.file_bytes)
+    return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf",headers={"Content-Disposition": f"inline"})
+    # return {
+
+@router.put("/rename_title/{thread_id}", summary="Update thread title")
+def update_description(
+    thread_id: int,
+    description: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user),
+):
+    thread = (
+        db.query(ChatThreads)
+        .filter(
+            ChatThreads.id == thread_id,
+            ChatThreads.org_id == current_user.org_id,
+            ChatThreads.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    thread.description = description
+    db.add(thread)
+    db.commit()
+    return {"message": "title updated successfully"}
 
 @router.get("/thread_id", summary="Requesting new Thread ID")
 def ask_thread(
@@ -674,7 +778,7 @@ def ask(
         user_allowed_dept_ids = list_user_access(
             user_id=current_user.id, org_id=data.org_id, db=db
         )
-    print("all sub org ids", user_allowed_dept_ids)
+    print("all sub org ids", user_allowed_dept_ids,type(user_allowed_dept_ids))
 
     allowed = _allowed_thread_id(db=db, current_user=current_user, t_id=thread_id)
     print("allowed thread", allowed)
@@ -699,8 +803,22 @@ def ask(
     rv = retriever.get_retreiver(
         vector_store=vectorStore.get_vector_store(),
         search_type="similarity",
-        top_n=data.top_k,
+        top_n=data.top_k
     )
+    
+    # rv = retriever.get_retreiver_by_document_id(
+    #     vector_store=vectorStore.get_vector_store(),
+    #     search_type="similarity",
+    #     top_n=data.top_k,
+    #     document_id=user_allowed_dept_ids[3],
+    # )
+    # user_allowed_dept_ids.append('global')
+    # rv = retriever.get_retreiver_by_department_ids(
+    #     vector_store=vectorStore.get_vector_store(),
+    #     search_type="similarity",
+    #     top_n=data.top_k,
+    #     dept_ids=user_allowed_dept_ids
+    # )
     retrieval_list.append(rv)
     print("test time", time.monotonic() - s)
     rvm = EnsembleRetriever(retrievers=retrieval_list)
@@ -725,7 +843,7 @@ def ask(
         config = {"configurable": {"thread_id": thread_id}}
 
         answer = chatbot.invoke(
-            {"messages": data.q, "context": masked_docs}, config=config
+            {"messages": data.q, "context": docs_list}, config=config
         )
     #  print("answer",answer)
 
@@ -779,6 +897,12 @@ def ask(
             unanswer_query=True,
         )
     db.add(chat_message)
+
+    # 
+    print(type(thread_id),type(data.org_id),type(output["title"]))
+    update_chat_thread_description(
+        db, data.org_id, current_user.id, thread_id, description=output["title"]
+    )
     db.commit()
     output['html_response'].append({
         "tag":"h1",
@@ -908,21 +1032,31 @@ def ask_by_id(
     print("allowed thread", allowed)
     if not allowed:
         raise HTTPException(status_code=403, detail="Not valid thread for current user")
-    for document_id, dept_id in doc_suborg:
+    # for document_id, dept_id in doc_suborg:
 
-        vectorStore = vectorManager.get_store(
+    #     vectorStore = vectorManager.get_store(
+    #         embeddings=embeddings,
+    #         persist_dir=f"{BASE_DIR}/{data.org_id}/dept/{dept_id}",
+    #     )
+    #     rv = retriever.get_retreiver_by_document_id(
+    #         vector_store=vectorStore.get_vector_store(),
+    #         search_type="similarity",
+    #         top_n=data.top_k,
+    #         document_id=document_id,
+    #     )
+    #     retrieval_list.append(rv)
+    vectorStore = vectorManager.get_store(
             embeddings=embeddings,
-            persist_dir=f"{BASE_DIR}/{data.org_id}/dept/{dept_id}",
+            persist_dir=f"{BASE_DIR}/{data.org_id}",
         )
-        rv = retriever.get_retreiver_by_document_id(
+    rv = retriever.get_retreiver_by_document_id(
             vector_store=vectorStore.get_vector_store(),
             search_type="similarity",
             top_n=data.top_k,
-            document_id=document_id,
+            document_ids=data.document_id,
         )
-        retrieval_list.append(rv)
-    rvm = EnsembleRetriever(retrievers=retrieval_list)
-    docs_list = rvm.invoke(input=data.q)
+    # rvm = EnsembleRetriever(retrievers=[rv])
+    docs_list = rv.invoke(input=data.q)
 
     # print("docs_list", docs_list)
     with PyMySQLSaver.from_conn_string(
