@@ -8,11 +8,12 @@ import io
 from PIL import Image
 
 import base64
-
+import os
 import pytesseract
 from PIL import Image
 import io
-
+from app.Rag.ocr.OpenaiOCR import OpenaiOCR
+OCR=OpenaiOCR(api_key=os.getenv("OPENAI_API_KEY"))  # Add your OpenAI API key here
 
 # IMPORTANT (Windows): Set path to tesseract.exe
 # pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -53,12 +54,16 @@ class ImageLoader(Idocloader):
             return docs
 
     def ocr(self,image_bytes: bytes):
-           image = Image.open(io.BytesIO(image_bytes))
-
-           # OCR extraction
-           response = pytesseract.image_to_string(image)
+           response= OCR.extract(image_bytes)
            print(response)
            return response
+    # def ocr(self,image_bytes: bytes):
+    #        image = Image.open(io.BytesIO(image_bytes))
+
+    #        # OCR extraction
+    #        response = pytesseract.image_to_string(image)
+    #        print(response)
+    #        return response
 
     def get_document(self):
             return self.documents

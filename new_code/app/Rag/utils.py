@@ -3,11 +3,12 @@ from app.Rag.OpenaiModel import OpenaiModel
 # from app.Rag.GeminiModel import GeminiFlashModel
 import os
 from app.Rag.Retriever import Retriever
+from app.Rag.GeminiModel import GeminiFlashModel
 retriever=Retriever()
 BASE_DIR="vectorstores/org"
 embeddings=OpenAIEmbeddings(api_key=os.getenv('OPENAI_API_KEY'),model='text-embedding-3-small')
-llm=OpenaiModel()
-# llm=GeminiFlashModel()
+llm_openai=OpenaiModel()
+llm_gemini=GeminiFlashModel()
 # file_utils.py
 from fastapi import UploadFile, HTTPException
 

@@ -65,10 +65,19 @@ def _check_duplicate(db: Session, org_id: int, dept_id: int, new_text: str, thre
     Returns:
         Optional[OrgDocument]: The duplicate document if found, else None.
     """
-    existing_docs = db.query(OrgDocument).filter(
-        OrgDocument.org_id == org_id,
-        OrgDocument.dept_id == dept_id
-    ).all()
+    print(dept_id)
+    if not dept_id or dept_id==0:
+        existing_docs = db.query(OrgDocument).filter(
+            OrgDocument.org_id == org_id,
+            OrgDocument.dept_id == None,
+            OrgDocument.scope == "global"
+        ).all()
+    else:
+        existing_docs = db.query(OrgDocument).filter(
+            OrgDocument.org_id == org_id,
+            OrgDocument.dept_id == dept_id,
+            OrgDocument.scope == "department"
+        ).all()
 
     compdoc=CompareDoc()    
     new_minhash = compdoc.create_minhash(new_text)
@@ -302,6 +311,8 @@ async def upload_org_document(
             
               )
             new_text=text.lower()
+            print("extracted text length",len(new_text))
+            print("extacted content",new_text)
             duplicate=_check_duplicate(db=db,org_id=org_id,dept_id=dept_id,new_text=new_text,threshold=0.8)
             if duplicate:
                raise HTTPException(
@@ -318,7 +329,7 @@ async def upload_org_document(
     # 6) Chunk text
 
          chunks = chunk_text(docs=docs, max_tokens=512, overlap=120)
-         print("chunks",chunks)
+        #  print("chunks",chunks)
          if not chunks:
             raise HTTPException(status_code=400, detail="No text chunks extracted from document")
     
@@ -401,6 +412,9 @@ async def upload_org_document(
 #     if not dom:
 #         raise HTTPException(status_code=403, detail="Only the organization admin can delete this document")
 #     return dom
+
+from langchain_community.callbacks.manager import get_openai_callback
+
 
 class DocumentOut(BaseModel):
     id: int
@@ -515,8 +529,27 @@ def update_document(
     return DocumentOut.model_validate(doc, from_attributes=True)
 
 
+from fastapi.responses import StreamingResponse
 
-
+@router.get("/document_content/{document_id}", summary="Get document content by id")
+def get_document_content(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user),
+):
+    document = (
+        db.query(OrgDocument)
+        .filter(
+            
+            OrgDocument.id == document_id,
+            OrgDocument.org_id == current_user.org_id,
+        )
+        .first()
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    pdf_bytes = base64.b64decode(document.file_bytes)
+    return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf",headers={"Content-Disposition": f"inline"})
 
 
 @router.delete(

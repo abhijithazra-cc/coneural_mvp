@@ -29,7 +29,7 @@ from app.models.chat_thread_model import ChatThreads
 from fastapi.responses import StreamingResponse
 
 # from app.utils.faiss_manager import FaissManager
-from app.Rag.utils import embeddings, llm, BASE_DIR, retriever
+from app.Rag.utils import embeddings, llm_openai,llm_gemini, BASE_DIR, retriever
 from app.Rag.VectorManager import vectorManager
 from langchain_classic.retrievers.ensemble import EnsembleRetriever
 from typing import Dict, List
@@ -62,23 +62,6 @@ def _access_public(a: UserAccessDepartment) -> Dict:
         "is_author": getattr(a, "is_author", False),
         "neural_cap": getattr(a, "neural_cap", None),
     }
-
-
-def _can_read(db: Session, user: UserModel, org_id: int, dept_id: int) -> bool:
-    # Org admin of same org can read everywhere in org
-    if user.user_type == UserType.ADMIN and user.org_id == org_id:
-        return True
-    # Else must have read access on this department
-    acc = (
-        db.query(UserAccessDepartment)
-        .filter(
-            UserAccessDepartment.org_id == org_id,
-            UserAccessDepartment.dept_id == dept_id,
-            UserAccessDepartment.user_id == user.id,
-        )
-        .first()
-    )
-    return bool(acc and acc.can_read)
 
 
 def list_user_access(
@@ -174,7 +157,7 @@ class SuggestedFollowUpQuestions(BaseModel):
         description="Exactly 3 list items rendered as <li>"
     )
 class RAGResponse(BaseModel):
-    title: str = Field(..., description="Title of chat on basis of chat history")
+    title: str = Field(..., description="Title on basis of only user query it doesn't depend on context")
     html_response: List[HtmlItem] = Field(
         ...,
         description=(
@@ -193,7 +176,7 @@ class RAGResponse(BaseModel):
     is_context_availale: Literal["True", "False"] = Field(
         ..., description="Whether answer was generated from provided context"
     )
-    suggested_follow_ups: SuggestedFollowUpQuestions = Field(..., description="Three relevant follow-up questions")
+    suggested_follow_ups: SuggestedFollowUpQuestions = Field(..., description="ul tag must be there ,Three relevant follow-up questions")
 
 
 import uuid
@@ -201,6 +184,9 @@ import uuid
 
 def extract_list_of_user_threads(s: ChatThreads) -> Dict:
     return {"id": s.id}
+
+
+
 
 
 import json
@@ -221,23 +207,39 @@ class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     total_token: int
     context: list
+    provider:str
+
 
 
 def chat_node(state: ChatState):
     messages = state["messages"][-1]
     context = state["context"]
+    provider=state.get("provider",None)
 
-    # response = llm.generate_stream_answer(
+
+    
+
+
+    # response = llm_openai.generate_stream_answer(
     #     context=context, query=messages
     # )
 
-    # response = llm.generate_stream_answer_with_structure(
+    # response = llm_openai.generate_stream_answer_with_structure(
     #     context=context, query=messages, schema=HtmlItem
     # )
-
-    response = llm.generate_answer_with_structure(
+    # response=""
+    if provider=='openai':
+       response = llm_openai.generate_answer_with_structure(
         context=context, query=messages, schema=RAGResponse
-    )
+        )
+    elif provider=='gemini':
+        response = llm_gemini.generate_answer_with_structure(
+        context=context, query=messages, schema=RAGResponse
+        )
+        
+    # response = llm_openai.generate_answer_with_structure(
+    #     context=context, query=messages, schema=RAGResponse
+    #     )
     # print(response)
     total_token = response.usage_metadata["total_tokens"]
     return {"messages": [response], "total_token": total_token}
@@ -269,6 +271,13 @@ with PyMySQLSaver.from_conn_string(
     cp.setup()
 
 
+def _get_thread_provider(db: Session,current_user, thread_id: int) -> str:
+    thread = db.query(ChatThreads).filter(        ChatThreads.org_id == current_user.org_id,
+        ChatThreads.user_id == current_user.id,ChatThreads.id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    return thread.llm_provider
+
 def _allowed_thread_id(db, current_user, t_id):
 
     threads = db.query(ChatThreads).filter(
@@ -296,13 +305,13 @@ def update_chat_thread_description(
             ChatThreads.org_id == org_id
         ).first()
     
-    print("chat_thread",type(chat_thread.description),(chat_thread.description))
+    # print("chat_thread",type(chat_thread.description),(chat_thread.description))
     # thread not found → do nothing
     # if not chat_thread:
     #     print("true")
     #     return
 
-    # 🔑 description already set → DO NOT overwrite
+    #  description already set → DO NOT overwrite
     if chat_thread.description :
         return
     # print("ggg",description)
@@ -322,137 +331,6 @@ from app.Rag.TexttoPdf import text_to_pdf_bytes
 from app.utils.celery_app import filter_sources_by_citation, celery_app
 from celery.result import AsyncResult
 
-# def filter_sources_by_citation(citations,org_id, sources):
-#     # 1. Extract all filenames mentioned after "citation"
-#     # Example fragment: "citation1: virat kohli 4.pdf"
-#     # cited_files = re.findall(r"([\w\s\-()]+\.(?:pdf|PDF))", response_text)
-
-#     # Normalize filenames
-#     db = SessionLocal()
-#     # current_user = get_current_active_user()
-#     cited_files = [f.strip() for f in citations]
-#     print(cited_files)
-#     result = {}
-
-#     # 2. Filter sources matching the cited filenames
-#     for src in sources:
-#         # print(src.metadata['filename'].lower())
-
-#         filename = src['metadata'].get('filename')
-
-
-#         if filename in cited_files:
-#             document_id = src['metadata']["document_id"]
-#             page_content = src['page_content']
-#             print("document_id",document_id)
-#             if document_id not in result:
-#                  result[document_id] = {
-#                     "filename": filename,
-#                     "chunks": [],
-#                     "link":None
-#                 }
-
-#             # Append page content to dict
-#             result[document_id]["chunks"].append(page_content)
-#     # print(result)
-
-#     output=[]
-#     for document_id,items in result.items():
-
-#             my_bytes=_get_doc_by_id(db=db,org_id=org_id,document_id=document_id)
-#             # docs=_get_doc_by_id(db,current_user,document_id)
-#             # full_doc=""
-#             # for doc in docs:
-#             #      print("doc",doc)
-
-#             #      full_doc+=doc
-#             #full_doc=''.join(docs.page_content)
-#             # print("my docs",docs)
-#             # my_bytes=text_to_pdf_bytes(full_doc)
-#             # print(my_bytes)
-#             my_bytes=base64.b64decode(my_bytes[0])
-#             obj=HighlightText()
-#             my_bytes=obj.highlight_text(my_bytes,chunks=items['chunks'])
-#             # with open('my_pdf.pdf',mode='wb') as f:
-#             #       f.write(my_bytes)
-#             # my_bytes=base64.b64encode(my_bytes).decode()
-#             response=upload_pdf_to_github(file_name=items['filename'],owner="rahulkumarcollectcent",token="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",folder='uploads',repo='pdf-viewer',pdf_bytes=my_bytes)
-#             # print(response)
-
-#             result[document_id]['link']=response['link']
-#             output.append({"filename":result[document_id]['filename'],"link":result[document_id]['link'],"document_id":document_id})
-#             # print(my_bytes)
-#     # print("result",result)
-#     return output
-
-
-# @router.websocket("/query")
-# async def stream_query(websocket:WebSocket, db: Session = Depends(get_db),current_user: UserModel = Depends(get_current_active_socket_user)
-#     ):
-#     await websocket.accept()
-
-#     print(current_user.username)
-#     data=await websocket.receive_json()
-
-#     print("data",data)
-#     user_allowed_dept_ids=list_user_access(user_id=current_user.id,org_id=data['org_id'],db=db)
-#     print("all sub org ids",user_allowed_dept_ids)
-#     if not user_allowed_dept_ids:
-#            raise HTTPException(status_code=403, detail="No acces to any department")
-#     allowed=_allowed_thread_id(db=db,current_user=current_user,t_id=data['selected'])
-#     print("allowed thread",allowed)
-#     if not allowed:
-#        raise HTTPException(status_code=403, detail="Not valid thread for current user")
-#     retrieval_list=[]
-#     for dept_id in user_allowed_dept_ids:
-#         vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}\\{data['org_id']}\\dept\\{dept_id}")
-#        # vectorStore.set_vector_store(docs=rows,embeddings=embeddings)
-
-#         rv=retriever.get_retreiver(vector_store=vectorStore.get_vector_store(),search_type='mmr',top_n=data['top_k'])
-#         # chunks=rv.invoke(input=data['q'])
-#         # print("chunks",chunks)
-#         retrieval_list.append(rv)
-#         # docs=rv.get_relevant_document(query=query)
-#         # docs_list.extend(docs)
-
-#     rvm= EnsembleRetriever(retrievers=retrieval_list)
-#     docs_list=await rvm.ainvoke(input=data['q'])
-
-#     # print(docs_list)
-
-#     # print("data",data)
-#     query=data['q']
-#     thread_id=data['selected']
-
-#     with PyMySQLSaver.from_conn_string(conn_string=os.getenv("DATABASE_URL")) as checkpointer:
-#          content=""
-#          chatbot=builder(checkpointer=checkpointer)
-#          config={"configurable":{"thread_id":thread_id}}
-#         #  print("context",docs_list)
-
-#         #  response =  chatbot.stream({"messages":query,"context":docs_list},config=config,stream_mode="messages")
-#          response =  chatbot.stream({"messages":query,"context":docs_list},config=config)
-#          for event in response:
-#                for item in event.values():
-#                     messages=item['messages']
-#                     last_message = messages[-1]
-#                     await websocket.send_text(json.dumps({"data":last_message.content,"type":"chunk"}))
-#         #  for chunk in response:
-#         #       print(chunk)
-#         #       await websocket.send_text(json.dumps({"data":"data","type":"chunk"}))
-#         #  for chunk,metadata in response :
-#         #     #  print(chunk)
-#         #      content+=chunk.content
-#         #      await websocket.send_text(json.dumps({"data":chunk.content,"type":"chunk"}))
-#             #  print(chunk)
-#             #  if metadata:
-#         #  print("chunks",docs_list)
-#         #  print(content)
-#         #  output=filter_sources_by_citation(db,current_user,content,sources=docs_list)
-#         #  print("output",output)
-#          await websocket.send_text(json.dumps({"data":"output","type":"metadata"}))
-#             #        await websocket.send_text(json.dumps({"data":metadata,"extra":"metadata"}))
-#     await websocket.close()
 import sys
 from langchain_core.documents import Document
 
@@ -522,21 +400,6 @@ def test_endpoint(
     return {"messages": response, "next_id": new_next_id, "has_more": has_more}
 
 
-# @router.get("/list_user_threads")
-# def list_threads(db: Session = Depends(get_db),
-#     current_user: UserModel = Depends(get_current_active_user),
-
-# ):
-
-#    threads=db.query(ChatThreads).filter(ChatThreads.org_id==current_user.org_id,
-#                                 ChatThreads.user_id==current_user.id).all()
-
-#    threads=[{"thread_id":u.id,"title":u.description or ""} for u in threads]
-#    threads.reverse()
-#    print(threads)
-#    return {"threads":threads}
-
-
 @router.delete("/delete_thread/{thread_id}", summary="Delete thread by id")
 def delete_thread(
     thread_id: int,
@@ -578,25 +441,6 @@ def get_description(
     return {"title": thread.description or ""}
 
 
-@router.get("/document_content/{document_id}", summary="Get document content by id")
-def get_document_content(
-    document_id: int,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user),
-):
-    document = (
-        db.query(OrgDocument)
-        .filter(
-            
-            OrgDocument.id == document_id,
-            OrgDocument.org_id == current_user.org_id,
-        )
-        .first()
-    )
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
-    pdf_bytes = base64.b64decode(document.file_bytes)
-    return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf",headers={"Content-Disposition": f"inline"})
     # return {
 
 @router.put("/rename_title/{thread_id}", summary="Update thread title")
@@ -622,13 +466,58 @@ def update_description(
     db.commit()
     return {"message": "title updated successfully"}
 
+from enum import Enum
+
+class LLMProvider(str, Enum):
+    OPENAI = "openai"
+    GEMINI = "gemini"
+
+def get_next_llm_provider(
+    db: Session,
+    current_user: UserModel,
+
+) -> LLMProvider:
+    """
+    Retrieve current LLM provider from chat_threads
+    and return the toggled provider.
+
+    openai → gemini
+    gemini → openai
+    """
+
+    thread = (
+        db.query(ChatThreads).order_by(ChatThreads.id.desc()).filter(
+
+            ChatThreads.org_id == current_user.org_id,
+            ChatThreads.user_id == current_user.id,).first()
+    )
+
+    if not thread or not thread.llm_provider:
+        # Default bootstrap behavior
+        return LLMProvider.OPENAI
+
+    current = thread.llm_provider.lower()
+
+    if current == LLMProvider.OPENAI:
+        return LLMProvider.GEMINI
+
+    if current == LLMProvider.GEMINI:
+        return LLMProvider.OPENAI
+
+    # Safety fallback
+    return LLMProvider.OPENAI
+
+
 @router.get("/thread_id", summary="Requesting new Thread ID")
 def ask_thread(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user),
-):
+):  
+    
+    # provider=get_random_llm_provider()
+    next_provider = get_next_llm_provider(db, current_user)
     user_thread = ChatThreads(
-        user_id=current_user.id, org_id=current_user.org_id, description=""
+        user_id=current_user.id, org_id=current_user.org_id, description="",llm_provider=next_provider
     )
     db.add(user_thread)
     db.commit()
@@ -639,48 +528,6 @@ def ask_thread(
     return {"thread_id": user_thread.id, "title": title}
 
 
-# @router.get("/chats/{thread_id}/messages")
-# def get_chat_messages(
-#     thread_id: int,
-#     current_user:UserModel= Depends(get_current_active_user), # type: ignore
-#     limit: int = Query(20, le=100),
-#     cursor: Optional[int] = None,
-#     db: Session = Depends(get_db),
-# ):
-#     query = db.query(ChatMessage).filter(
-#         ChatMessage.user_id == current_user.id,
-#         ChatMessage.org_id == current_user.org_id,
-#         ChatMessage.thread_id == thread_id,
-#     )
-
-#     # If cursor exists → fetch older messages
-#     if cursor:
-#         query = query.filter(ChatMessage.id < cursor)
-
-#     messages = (
-#         query
-#         .order_by(ChatMessage.id.desc())
-#         .limit(limit + 1)   # +1 to check if more data exists
-#         .all()
-#     )
-
-#     has_more = len(messages) > limit
-#     messages = messages[:limit]
-
-#     next_cursor = messages[-1].id if messages else None
-#     response=[]
-#     for msg in messages:
-#          response.append({
-#             "id":msg.id,
-#             "query":msg.query,
-#             "response":msg.response,
-
-#          })
-#     return {
-#         "message": response,
-#         "next_cursor": next_cursor,
-#         "has_more": has_more
-#     }
 from fastapi.responses import StreamingResponse
 import io
 from app.models.user_access_department_model import UserAccessDepartment 
@@ -740,13 +587,6 @@ def _list_of_departments(db: Session, current_user: UserModel) -> Dict:
     return [s.id for s in departments]
 
 
-# def extract_content_from_html(html_response: List[HtmlItem]) -> str:
-#     content = ""
-#     for item in html_response:
-#         content += item['content'] + " "
-#     return content.strip()
-
-
 def _is_org_exist(db: Session, org_id: int) -> bool:
     org = db.query(UserModel).filter(UserModel.org_id == org_id).first()
     if not org:
@@ -755,7 +595,43 @@ def _is_org_exist(db: Session, org_id: int) -> bool:
 
 from app.Rag.Masking import Masking, PiiMaskingState
 
+import time
+import random
+from typing import Any, Dict, Tuple
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+# router = APIRouter()
+
+def _invoke_chatbot_with_fallback(
+    chatbot: Any,
+    payload: Dict[str, Any],
+    base_config: Dict[str, Any],
+) -> Tuple[Dict[str, Any], str]:
+    """
+    Picks 50/50 provider. If primary fails, falls back to the other provider.
+    Returns (answer, provider_used).
+    """
+    primary = get_random_llm_provider()
+    fallback = "gemini" if primary == "openai" else "gemini"
+
+    last_err: Exception | None = None
+    for provider in (primary, fallback):
+        try:
+            cfg = dict(base_config or {})
+            cfg.setdefault("configurable", {})
+            cfg["configurable"]["llm_provider"] = provider  # routing key for graph
+            ans = chatbot.invoke(payload, config=cfg)
+            return ans, provider
+        except Exception as e:
+            last_err = e
+            print(f" LLM failed [{provider}] => {repr(e)}. Trying fallback...", flush=True)
+            time.sleep(0.2)
+
+    raise HTTPException(
+        status_code=502,
+        detail=f"Both LLM providers failed. Last error: {repr(last_err)}",
+    )
 
 
 
@@ -800,11 +676,11 @@ def ask(
     vectorStore = vectorManager.get_store(
         embeddings=embeddings, persist_dir=f"{BASE_DIR}/{data.org_id}"
     )
-    rv = retriever.get_retreiver(
-        vector_store=vectorStore.get_vector_store(),
-        search_type="similarity",
-        top_n=data.top_k
-    )
+    # rv = retriever.get_retreiver(
+    #     vector_store=vectorStore.get_vector_store(),
+    #     search_type="similarity",
+    #     top_n=data.top_k
+    # )
     
     # rv = retriever.get_retreiver_by_document_id(
     #     vector_store=vectorStore.get_vector_store(),
@@ -812,13 +688,13 @@ def ask(
     #     top_n=data.top_k,
     #     document_id=user_allowed_dept_ids[3],
     # )
-    # user_allowed_dept_ids.append('global')
-    # rv = retriever.get_retreiver_by_department_ids(
-    #     vector_store=vectorStore.get_vector_store(),
-    #     search_type="similarity",
-    #     top_n=data.top_k,
-    #     dept_ids=user_allowed_dept_ids
-    # )
+    user_allowed_dept_ids.append('global')
+    rv = retriever.get_retreiver_by_department_ids(
+        vector_store=vectorStore.get_vector_store(),
+        search_type="similarity",
+        top_n=data.top_k,
+        dept_ids=user_allowed_dept_ids
+    )
     retrieval_list.append(rv)
     print("test time", time.monotonic() - s)
     rvm = EnsembleRetriever(retrievers=retrieval_list)
@@ -829,9 +705,10 @@ def ask(
     ss = time.monotonic()
     masking_state = PiiMaskingState()
     masking = Masking()
+    
     masked_docs = masking.mask_texts(docs_list, masking_state)
     print("masking time", time.monotonic() - ss)
-    print("org_docs_list", docs_list)
+    # print("org_docs_list", docs_list)
     # print("mask_docs_list", masked_docs)
     
     s1 = time.monotonic()
@@ -841,33 +718,25 @@ def ask(
         chatbot = builder(checkpointer=checkpointer)
         print(type(thread_id), thread_id)
         config = {"configurable": {"thread_id": thread_id}}
-
+        provider=_get_thread_provider(db,current_user, thread_id)
         answer = chatbot.invoke(
-            {"messages": data.q, "context": docs_list}, config=config
+            {"messages": data.q, "context": masked_docs,"provider":provider}, config=config
         )
     #  print("answer",answer)
 
     siz = sys.getsizeof(rvm)
     print("output",answer['messages'][-1].content)
-    output = json.loads(answer["messages"][-1].content)
+    res=answer['messages'][-1].content
+    res=res.replace("```json","").replace("```","")
+    output = json.loads(res)
     e = time.monotonic()
     # print("response time",e-s)
-    # print("output",output)
+    print("output",output)
     # s1=time.monotonic()
     serialize_doc_list = documents_to_dicts(docs_list)
     print("output citation",output['citation'])
     my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
 
-    # print(my_link)
-    # links = filter_sources_by_citation.delay(
-    #     citations=output["citation"],
-    #     org_id=current_user.org_id,
-    #     sources=serialize_doc_list,
-    # )
-    # # links=q.enqueue(filter_sources_by_citation,citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
-    # # links=q.enqueue(hello,2,3)
-    # print("links",links.id)
-    # bt.add_task(create_link_for_citation,db,current_user,citations=output['citation'],sources=docs_list)
     print("time1", time.monotonic() - s1)
     llm_response = extract_text_only_from_html(output["html_response"])
     # print(type(llm_response),llm_response)
@@ -976,29 +845,6 @@ def get_chat_history(
         )
     return {"message": response, "next_id": new_next_id, "has_more": has_more}
 
-
-# @router.get("/chat_history/{thread_id}",summary="Get chat history by thread id")
-# def get_chat_history(
-#     thread_id:int,
-#     db: Session = Depends(get_db),
-#     current_user: UserModel = Depends(get_current_active_user)):
-#     print("thread id",thread_id)
-#     print("current user",current_user.id)
-#     print("current org",current_user.org_id)
-#     chat_history=db.query(ChatMessage).filter(ChatMessage.thread_id==thread_id,
-#                                 ChatMessage.user_id==current_user.id,ChatMessage.org_id==current_user.org_id).all()
-#     output=[]
-#     for chat in chat_history:
-#          print(chat.id)
-#          output.append({
-#             "id":chat.id,
-#             "query":chat.query,
-#             "response":chat.response,
-#             "tokens":chat.tokens,
-#             "citation":chat.citation,
-#             "created_at":chat.created_at
-#          })
-#     return {"chat_history":output}
 
 
 @router.post(
