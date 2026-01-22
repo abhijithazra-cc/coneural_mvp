@@ -8,9 +8,10 @@ from langchain_core.runnables import RunnableLambda
 
 
 class GeminiFlashModel:
+    
     def __init__(self):
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             temperature=1,
             google_api_key=os.getenv("GOOGLE_API_KEY"),
             streaming=False,
@@ -89,6 +90,50 @@ Assistant:
     def get_prompt_with_parser(self, parser):
         PROMPT_TEMPLATE = """
 You are an enterprise-grade RAG Assistant optimized for factual, citation-based answers.
+
+==========================================
+CORE RULES
+
+Always read the provided context carefully before answering.
+
+If the context contains the answer:
+• Extract the exact values from the documents.
+• Never rewrite, rephrase, round, or modify factual numbers or statements.
+• If multiple documents contain the same answer, treat them as supporting the same fact.
+• Use citations directly inside the sentence in this format: (sources: file1.pdf, file2.pdf)
+
+If different documents give different answers (conflicting facts):
+• Write ONE combined narrative answer.
+• The answer must explain the conflict clearly.
+• Mention which documents support which values.
+• State which value is most recent ONLY if date_time metadata is explicitly available.
+• Do NOT invent, infer, or assume any date_time or metadata.
+• Use citations directly inside the explanation: (sources: docA.pdf, docB.pdf)
+
+If the answer does NOT appear in the provided context:
+• Start the response with exactly: "Not available in provided context."
+• Then answer using general knowledge.
+• Clearly label this part with citation: ["model_knowledge"]
+
+Do NOT hallucinate filenames, document names, metadata, page numbers, dates, or sources.
+• Only reference documents that are explicitly present in the provided context.
+
+
+IMPORTANT: Follow the output format strictly.
+==========================================
+Always include exactly 3 short and relevant follow-up questions.
+    Questions must relate to the same topic or documents.
+    Do not assume information outside the provided context.
+    Do not include answers.
+
+==========================================
+END
+
+=========================================
+
+=========================================
+INPUT
+=========================================
 
 <context>
 {context}

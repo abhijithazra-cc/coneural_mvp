@@ -17,7 +17,7 @@ from app.utils.embeddings import embed_texts
 from app.models.chat_thread_model import ChatThreads
 from fastapi.responses import StreamingResponse
 # from app.utils.faiss_manager import FaissManager
-from app.Rag.utils import embeddings,llm,BASE_DIR,retriever
+from app.Rag.utils import embeddings,llm_openai,BASE_DIR,retriever
 from app.Rag.VectorManager import vectorManager
 from langchain_classic.retrievers.ensemble import EnsembleRetriever
 from typing import Dict, List
