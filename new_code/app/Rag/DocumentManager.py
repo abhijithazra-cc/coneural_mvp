@@ -8,6 +8,7 @@ from app.Rag.document_loaders.PdfLoader import PdfLoader
 from app.Rag.document_loaders.ImageLoader import ImageLoader
 from app.Rag.document_loaders.TxtLoader import TxtLoader
 from app.Rag.document_loaders.PptLoader import PptLoader
+from app.Rag.document_loaders.CsvLoader import CsvLoader
 # from app.Rag.document_loaders import PdfLoader,PptLoader,CsvLoader,ImageLoader,TxtLoader
 class DocumentManager:
     """
@@ -23,7 +24,8 @@ class DocumentManager:
         ".txt": TxtLoader,
         ".pptx": PptLoader,
         ".ppt": PptLoader,
-        
+ 
+        ".csv": CsvLoader,
         # Images
         ".avif": ImageLoader,
         ".bmp": ImageLoader,
