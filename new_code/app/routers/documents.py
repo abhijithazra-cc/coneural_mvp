@@ -4,7 +4,7 @@ from dataclasses import Field
 from enum import Enum
 import io
 from typing import List, Optional
-
+from app.services.embedding_token import user_license_and_token_update,_count_tokens_for_openai_embeddings,dept_license_and_token_update,user_license_and_token_update
 from fastapi.responses import JSONResponse
 # from prometheus_client import Enum
 from app.Rag.VectorManager import vectorManager
@@ -329,7 +329,7 @@ async def upload_org_document(
     # 6) Chunk text
 
          chunks = chunk_text(docs=docs, max_tokens=512, overlap=120)
-        #  print("chunks",chunks)
+         print("chunks",chunks)
          if not chunks:
             raise HTTPException(status_code=400, detail="No text chunks extracted from document")
     
@@ -369,7 +369,13 @@ async def upload_org_document(
          else:
             vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}")
             vectorStore.add_documents(documents=chunks,document_id=doc.id,dept_id='global')
-
+         token=0
+         for chunk in chunks:
+                 token+=_count_tokens_for_openai_embeddings(model_name="text-embedding-ada-002",texts=[chunk.page_content])
+         print("total tokens for embedding",token)
+         user_license_and_token_update(db=db,user_id=current.id,dept_id=dept_id,tokens_used=token,allocated_licenses=1)
+         if dept_id and doc_scope=="department":
+            dept_license_and_token_update(db=db,dept_id=dept_id,org_id=org_id,tokens_used=token,allocated_licenses=1)
          db.add_all(
         [
             DocChunk(
