@@ -662,17 +662,17 @@ def ask(
     if not allowed:
         raise HTTPException(status_code=403, detail="Not valid thread for current user")
     retrieval_list = []
-    for dept_id in user_allowed_dept_ids:
-        vectorStore = vectorManager.get_store(
-            embeddings=embeddings,
-            persist_dir=f"{BASE_DIR}/{data.org_id}/dept/{dept_id}",
-        )
-        rv = retriever.get_retreiver(
-            vector_store=vectorStore.get_vector_store(),
-            search_type="similarity",
-            top_n=data.top_k,
-        )
-        retrieval_list.append(rv)
+    # for dept_id in user_allowed_dept_ids:
+    #     vectorStore = vectorManager.get_store(
+    #         embeddings=embeddings,
+    #         persist_dir=f"{BASE_DIR}/{data.org_id}/dept/{dept_id}",
+    #     )
+    #     rv = retriever.get_retreiver(
+    #         vector_store=vectorStore.get_vector_store(),
+    #         search_type="similarity",
+    #         top_n=data.top_k,
+    #     )
+    #     retrieval_list.append(rv)
     vectorStore = vectorManager.get_store(
         embeddings=embeddings, persist_dir=f"{BASE_DIR}/{data.org_id}"
     )
