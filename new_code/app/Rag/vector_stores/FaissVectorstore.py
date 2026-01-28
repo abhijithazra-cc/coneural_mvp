@@ -1,8 +1,12 @@
 from app.Rag.abstractions.IVectorstore import IVectorstore
 from langchain_community.vectorstores import FAISS
 import os
+import faiss
 from datetime import datetime
 from app.Rag.utils import embeddings
+from langchain_community.docstore.in_memory import InMemoryDocstore
+
+
 class FaissVectorstore(IVectorstore):
      # def __init__(self):
      #      self.vectorstre=None
@@ -17,12 +21,33 @@ class FaissVectorstore(IVectorstore):
      #    #   val._get_relevant_documents()
      # def get_vector_store(self):
      #      return self.vectorstore
-    def __init__(self,embeddings,persist_dir="vectorstores\org"):
-        self.persist_dir = persist_dir
-        os.makedirs(persist_dir, exist_ok=True)
+    # def __init__(self,embeddings,persist_dir="vectorstores\org"):
+    #     self.persist_dir = persist_dir
+    #     os.makedirs(persist_dir, exist_ok=True)
+    #     self.embeddings = embeddings
+    #     self.vectorstore = None
+    #     self.document_id_list=[]
+    def __init__(
+        self,
+        embeddings,
+        persist_dir="vectorstores/org",
+        embedding_dim: int = 1536,
+        hnsw_m: int = 32,
+        ef_construction: int = 40,
+        ef_search: int = 16,
+        ):
         self.embeddings = embeddings
-        self.vectorstore = None
-        self.document_id_list=[]
+        self.persist_dir = persist_dir
+        self.embedding_dim = embedding_dim
+
+        os.makedirs(self.persist_dir, exist_ok=True)
+
+        self.vectorstore: FAISS | None = None
+
+        self.hnsw_m = hnsw_m
+        self.ef_construction = ef_construction
+        self.ef_search = ef_search
+
      
     # ---------- Load or create ----------
     def _load_or_create_store(self):
@@ -35,7 +60,17 @@ class FaissVectorstore(IVectorstore):
                 allow_dangerous_deserialization=True,
             )
         elif self.vectorstore is None:
-            self.vectorstore = FAISS.from_texts(["init"], self.embeddings)
+            index = faiss.IndexHNSWFlat(self.embedding_dim, self.hnsw_m)
+            index.hnsw.efConstruction = self.ef_construction
+            index.hnsw.efSearch = self.ef_search
+
+            self.vectorstore = FAISS(
+                embedding_function=self.embeddings,
+                index=index,
+                docstore=InMemoryDocstore(),
+                index_to_docstore_id={},
+            )
+            # self.vectorstore = FAISS.from_texts(["init"], self.embeddings)
             self.vectorstore.save_local(self.persist_dir)
         return self.vectorstore
     def set_vector_store(self,docs, embeddings):
