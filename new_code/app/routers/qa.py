@@ -602,7 +602,7 @@ from typing import Any, Dict, Tuple
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 # router = APIRouter()
-
+from app.services.embedding_token import dept_license_and_token_update , user_license_and_token_update
 def _invoke_chatbot_with_fallback(
     chatbot: Any,
     payload: Dict[str, Any],
@@ -778,6 +778,19 @@ def ask(
         "content":"Suggested Follow Up Questions"
     })
     output['html_response'].append(output['suggested_follow_ups'])
+    user_license_and_token_update(
+        db=db,
+        user_id=current_user.id,
+        dept_id=docs_list[0].metadata.get("dept_id",None),
+        tokens_used=answer["total_token"],
+     
+    )
+    dept_license_and_token_update(
+        db=db,
+        dept_id=docs_list[0].metadata.get("dept_id",None),
+        org_id=current_user.org_id,
+        tokens_used=answer["total_token"],
+    )
     # cit=create_link_for_citation(db,current_user,citations=output['citation'],sources=docs_list)
     print("model response time", time.monotonic() - s1)
     print("total time", time.monotonic() - s)

@@ -24,12 +24,12 @@ class DepartmentLicenses(Base):
 )
 
 # auto calculated: licenses * 100000
-    allocated_token = Column(Integer, Computed("allocated_licenses * 100000", persisted=True))
+    allocated_tokens = Column(Integer, Computed("allocated_licenses * 100000", persisted=True))
 
-    used_token = Column(Integer, nullable=False, server_default="0")
+    used_tokens = Column(Integer, nullable=False, server_default="0")
 
 # auto calculated: total_token - used_token
-    balance_token = Column(Integer, Computed("allocated_token - used_token", persisted=True))
+    balance_tokens = Column(Integer, Computed("allocated_tokens - used_tokens", persisted=True))
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

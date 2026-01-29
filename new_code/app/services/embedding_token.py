@@ -81,7 +81,7 @@ def user_license_and_token_update(
     user_id: int,
     dept_id: int,
     tokens_used: int,
-    allocated_licenses: int = 0
+
 ) -> None:
     """
     Updates the user_licenses table for a specific user and department
@@ -100,7 +100,7 @@ def user_license_and_token_update(
     result = db.execute(stmt).fetchone()
 
     if not result:
-        user_license=UserLicenses(user_id=user_id, dept_id=dept_id, used_tokens=tokens_used,allocated_licenses=allocated_licenses)
+        user_license=UserLicenses(user_id=user_id, dept_id=dept_id, used_tokens=tokens_used)
         db.add(user_license)
         db.commit()
         return
