@@ -66,6 +66,8 @@ from app.routers.qa import router as qa_router
 from app.routers.onboarding import router as onboardig_router
 from app.routers.unanswered_qa import router as unanswered_router
 from app.routers.searchdoc import router as searchdoc_router
+from app.routers.token_usage import router_dept as token_usage_dept_router
+from app.routers.token_usage import router_user as token_usage_user_router  
 # 🔹 Attach routers
 app.include_router(auth_router)
 app.include_router(org_router)
@@ -77,7 +79,8 @@ app.include_router(qa_router)
 app.include_router(onboardig_router)
 app.include_router(unanswered_router)
 app.include_router(searchdoc_router)
-
+app.include_router(token_usage_dept_router)
+app.include_router(token_usage_user_router) 
 # 🔹 Health / root endpoints
 @app.get("/")
 def root():
