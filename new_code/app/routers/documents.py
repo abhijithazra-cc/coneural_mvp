@@ -362,8 +362,8 @@ async def upload_org_document(
          db.flush()  # doc.id becomes available
     # await session.flush()  
          if doc_scope=="department":
-            vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{dept_id}")
-            vectorStore.add_documents(documents=chunks,document_id=doc.id,dept_id=dept_id)
+            # vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}/dept/{dept_id}")
+            # vectorStore.add_documents(documents=chunks,document_id=doc.id,dept_id=dept_id)
             vs=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}")
             vs.add_documents(documents=chunks,document_id=doc.id,dept_id=dept_id)
          else:
