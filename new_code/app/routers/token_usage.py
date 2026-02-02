@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import select, Table, MetaData, func
+from sqlalchemy import select, Table, MetaData, func, text
 from app.database import get_db
 
 router_dept = APIRouter(prefix="/department-tokens", tags=["Department Tokens"])

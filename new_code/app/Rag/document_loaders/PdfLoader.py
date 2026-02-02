@@ -3,17 +3,18 @@ from app.Rag.abstractions.Idocloader import Idocloader
 import fitz  # PyMuPDF (best)
 
 from langchain_core.documents import Document
-
+import os
 import fitz
 import pytesseract
 from PIL import Image
 import io
-
+from app.Rag.ocr.OpenaiOCR import OpenaiOCR
+OCR=OpenaiOCR(api_key=os.getenv("OPENAI_API_KEY")) 
 
 # IMPORTANT (Windows): Set path to tesseract.exe
 # pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 #for linux
-pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+# pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 class PdfLoader(Idocloader):
     def __init__(self):
@@ -57,10 +58,10 @@ class PdfLoader(Idocloader):
                         img_bytes = pix.tobytes("png")
 
                     # Load into PIL
-                    image = Image.open(io.BytesIO(img_bytes))
+                    # image = Image.open(io.BytesIO(img_bytes))
 
                     # OCR extraction
-                    ocr_text = pytesseract.image_to_string(image)
+                    ocr_text = OCR.extract(img_bytes, filename)
 
                     # Store only if something meaningful extracted
                     if ocr_text.strip():

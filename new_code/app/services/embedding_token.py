@@ -6,7 +6,7 @@ from langchain_core.documents import Document
 from sqlalchemy import update, select, Table, MetaData
 from sqlalchemy.orm import Session
 from datetime import datetime
-from app.models.user_licenses_model import UserLicenses
+from app.models.organization_model import Organization
 from app.models.department_licenses_model import DepartmentLicenses
 
 def dept_license_and_token_update(
@@ -14,7 +14,7 @@ def dept_license_and_token_update(
     org_id: int,
     dept_id: int,
     tokens_used: int,
-    allocated_licenses: int = 0
+
 ) -> None:
     """
     When an author uploads a file, this function updates the department_licenses
@@ -44,7 +44,7 @@ def dept_license_and_token_update(
     result = db.execute(stmt).fetchone()
     if result is None:
             
-        dept_license=DepartmentLicenses(org_id=org_id, dept_id=dept_id, used_tokens=tokens_used,allocated_licenses=allocated_licenses)
+        dept_license=DepartmentLicenses(org_id=org_id, dept_id=dept_id, used_tokens=tokens_used)
         db.add(dept_license)
         db.commit()
         return
@@ -74,6 +74,49 @@ from sqlalchemy import update, select, Table, MetaData
 from sqlalchemy.orm import Session
 from datetime import datetime
 
+def org_license_and_token_update(
+    db: Session,
+
+    org_id: int,
+
+    tokens_used: int,
+
+) -> None:
+    """
+    Updates the org_licenses table for a specific org and department
+    when that org uploads a file that consumes embedding tokens.
+
+    Adds to the used_tokens column (other columns are generated).
+    """
+    metadata = MetaData()
+    org_licenses = Table("organizations", metadata, autoload_with=db.bind)
+
+    stmt = select(org_licenses.c.used_tokens).where(
+        org_licenses.c.id == org_id,
+    )
+    result = db.execute(stmt).fetchone()
+
+    if not result:
+        org_license=Organization(id=org_id, used_tokens=tokens_used)
+        db.add(org_license)
+        db.commit()
+        return
+
+
+    new_used_tokens = (result.used_tokens or 0) + tokens_used
+
+    upd = (
+        update(org_licenses)
+        .where(
+            org_licenses.c.id == org_id,
+        )
+        .values(
+            used_tokens=new_used_tokens,
+            updated_at=datetime.utcnow()
+        )
+    )
+    db.execute(upd)
+    db.commit()
 
 def user_license_and_token_update(
     db: Session,
@@ -91,23 +134,47 @@ def user_license_and_token_update(
     """
     metadata = MetaData()
     user_licenses = Table("user_licenses", metadata, autoload_with=db.bind)
-
-    stmt = select(user_licenses.c.used_tokens).where(
+    print("dept_id in embedding token",dept_id,type(dept_id))
+    if dept_id ==0:
+        stmt=select(user_licenses.c.used_tokens).where(
+            user_licenses.c.user_id == user_id,
+            user_licenses.c.dept_id.is_(None),
+        )
+    else:
+       stmt = select(user_licenses.c.used_tokens).where(
         user_licenses.c.user_id == user_id,
         user_licenses.c.dept_id == dept_id,
     
-    )
+       )
     result = db.execute(stmt).fetchone()
 
     if not result:
-        user_license=UserLicenses(user_id=user_id, dept_id=dept_id, used_tokens=tokens_used)
+        if dept_id ==0:
+            user_license=UserLicenses(user_id=user_id, used_tokens=tokens_used)
+        else:
+            user_license=UserLicenses(user_id=user_id, dept_id=dept_id, used_tokens=tokens_used)
+        
         db.add(user_license)
         db.commit()
         return
 
 
     new_used_tokens = (result.used_tokens or 0) + tokens_used
-    
+    if dept_id ==0:
+        upd=(
+            update(user_licenses)
+            .where(
+                user_licenses.c.user_id == user_id,
+                user_licenses.c.dept_id.is_(None),
+            )
+            .values(
+                used_tokens=new_used_tokens,
+                updated_at=datetime.utcnow()
+            )
+        )
+        db.execute(upd)
+        db.commit()
+        return
     upd = (
         update(user_licenses)
         .where(

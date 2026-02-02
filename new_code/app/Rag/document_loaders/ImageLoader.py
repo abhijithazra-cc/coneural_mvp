@@ -18,7 +18,7 @@ OCR=OpenaiOCR(api_key=os.getenv("OPENAI_API_KEY"))  # Add your OpenAI API key he
 # IMPORTANT (Windows): Set path to tesseract.exe
 # pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 #for linux
-pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+# pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 def encode_image(image_bytes: bytes):
 
@@ -46,15 +46,15 @@ class ImageLoader(Idocloader):
             myfile = img2pdf.convert(file)
             with open('temp.pdf', 'wb') as f:
                 f.write(myfile)
-            response = self.ocr(file)
+            response = self.ocr(file,filename)
             docs.append(Document(page_content=response, metadata={
                         "pages":  1, "filename": filename}))
 
             self.documents = docs
             return docs
 
-    def ocr(self,image_bytes: bytes):
-           response= OCR.extract(image_bytes)
+    def ocr(self,image_bytes: bytes,filename: str):
+           response= OCR.extract(image_bytes,filename)
            print(response)
            return response
     # def ocr(self,image_bytes: bytes):

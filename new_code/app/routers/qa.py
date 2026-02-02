@@ -778,16 +778,21 @@ def ask(
         "content":"Suggested Follow Up Questions"
     })
     output['html_response'].append(output['suggested_follow_ups'])
+    dept_id=docs_list[0].metadata.get("dept_id",None)
+    if dept_id is not None:
+        if dept_id=='global':
+            dept_id=0
+  
     user_license_and_token_update(
         db=db,
         user_id=current_user.id,
-        dept_id=docs_list[0].metadata.get("dept_id",None),
+        dept_id=dept_id,
         tokens_used=answer["total_token"],
      
     )
     dept_license_and_token_update(
         db=db,
-        dept_id=docs_list[0].metadata.get("dept_id",None),
+        dept_id=dept_id ,
         org_id=current_user.org_id,
         tokens_used=answer["total_token"],
     )

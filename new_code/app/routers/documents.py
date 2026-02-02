@@ -4,8 +4,11 @@ from dataclasses import Field
 from enum import Enum
 import io
 from typing import List, Optional
-from app.services.embedding_token import user_license_and_token_update,_count_tokens_for_openai_embeddings,dept_license_and_token_update,user_license_and_token_update
+
+from sqlalchemy import MetaData, Table
+from app.services.embedding_token import user_license_and_token_update,_count_tokens_for_openai_embeddings,dept_license_and_token_update,user_license_and_token_update,org_license_and_token_update
 from fastapi.responses import JSONResponse
+from sqlalchemy import update, select, Table, MetaData
 # from prometheus_client import Enum
 from app.Rag.VectorManager import vectorManager
 from app.models.chat_thread_model import ChatThreads
@@ -224,6 +227,7 @@ def _ensure_can_manage_dept_docs(db: Session, current: UserModel, org_id: int, d
     raise HTTPException(status_code=403, detail="Only org admin, dept admin, or author can manage documents")
 
 
+
 from enum import Enum
 
 class ScopeEnum(str, Enum):
@@ -314,11 +318,11 @@ async def upload_org_document(
             print("extracted text length",len(new_text))
             print("extacted content",new_text)
             duplicate=_check_duplicate(db=db,org_id=org_id,dept_id=dept_id,new_text=new_text,threshold=0.8)
-            if duplicate:
-               raise HTTPException(
-                status_code=409,
-                detail=f"Duplicate document detected: {duplicate.title} (ID: {duplicate.id})",
-            )
+            # if duplicate:
+            #    raise HTTPException(
+            #     status_code=409,
+            #     detail=f"Duplicate document detected: {duplicate.title} (ID: {duplicate.id})",
+            # )
             compdoc=CompareDoc()
             m= compdoc.create_minhash(text)
             doc_hash=pickle.dumps(m)
@@ -329,7 +333,7 @@ async def upload_org_document(
     # 6) Chunk text
 
          chunks = chunk_text(docs=docs, max_tokens=512, overlap=120)
-         print("chunks",chunks)
+        #  print("chunks",chunks)
          if not chunks:
             raise HTTPException(status_code=400, detail="No text chunks extracted from document")
     
@@ -373,9 +377,14 @@ async def upload_org_document(
          for chunk in chunks:
                  token+=_count_tokens_for_openai_embeddings(model_name="text-embedding-ada-002",texts=[chunk.page_content])
          print("total tokens for embedding",token)
-         user_license_and_token_update(db=db,user_id=current.id,dept_id=dept_id,tokens_used=token,allocated_licenses=1)
+         
+         
          if dept_id and doc_scope=="department":
-            dept_license_and_token_update(db=db,dept_id=dept_id,org_id=org_id,tokens_used=token,allocated_licenses=1)
+            user_license_and_token_update(db=db,user_id=current.id,dept_id=dept_id,tokens_used=token)
+            dept_license_and_token_update(db=db,dept_id=dept_id,org_id=org_id,tokens_used=token)
+         else :
+
+             org_license_and_token_update(db=db,org_id=org_id,tokens_used=token)
          db.add_all(
         [
             DocChunk(
