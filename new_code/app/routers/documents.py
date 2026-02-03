@@ -336,7 +336,8 @@ async def upload_org_document(
         #  print("chunks",chunks)
          if not chunks:
             raise HTTPException(status_code=400, detail="No text chunks extracted from document")
-    
+         with open(f"app/filedata/{filename}", "wb") as f:
+            f.write(payload)
 
          doc_bytes=base64.b64encode(payload)
     # if scope==ScopeEnum.global_scope:

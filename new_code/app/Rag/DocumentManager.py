@@ -9,6 +9,7 @@ from app.Rag.document_loaders.ImageLoader import ImageLoader
 from app.Rag.document_loaders.TxtLoader import TxtLoader
 from app.Rag.document_loaders.PptLoader import PptLoader
 from app.Rag.document_loaders.CsvLoader import CsvLoader
+from app.Rag.document_loaders.MarkdownLoader import MarkdownLoader
 # from app.Rag.document_loaders import PdfLoader,PptLoader,CsvLoader,ImageLoader,TxtLoader
 class DocumentManager:
     """
@@ -24,7 +25,7 @@ class DocumentManager:
         ".txt": TxtLoader,
         ".pptx": PptLoader,
         ".ppt": PptLoader,
- 
+        ".md": MarkdownLoader,
         ".csv": CsvLoader,
         # Images
         ".avif": ImageLoader,
@@ -53,7 +54,7 @@ class DocumentManager:
     def get_doc_loader(self, extension: str):
         """Return handler instance based on file extension."""
         ext = extension.lower()
-
+        # print("requested extension:", ext)
         handler_class = self.EXT_TO_HANDLER.get(ext)
         # print(handler_class)
         if handler_class is None:
