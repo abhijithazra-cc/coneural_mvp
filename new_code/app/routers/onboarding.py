@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models.organization_model import Organization as OrganizationModel
 from app.models.department_model import Department as DepartmentModel
 from app.models.user_model import User as UserModel
-from app.models.user_access_department_model import UserAccessDepartment
+from app.models.user_access_department_model import UserAccessDepartment,UserType
 from app.services.auth import (
     get_password_hash, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES,
     get_current_active_user, get_user_by_email, get_user_by_username
@@ -140,7 +140,7 @@ def invite_users(
             tmp_hash = get_password_hash("Temp@1234")
             user_type = UserType.USER if inv.role != RoleEnum.ADMIN else UserType.ADMIN
             user = UserModel(email=inv.email, username=uname, hashed_password=tmp_hash,
-                             user_type=user_type, org_id=org.id)
+                              org_id=org.id)
             db.add(user); db.flush()
 
         # Map departments
