@@ -633,6 +633,13 @@ def _invoke_chatbot_with_fallback(
         detail=f"Both LLM providers failed. Last error: {repr(last_err)}",
     )
 
+def unmask_html_list(html_list: list) -> list:
+    state=PiiMaskingState()
+    masking = Masking()
+    for item in html_list:
+        if isinstance(item, dict) and "content" in item:
+            item["content"] = masking.unmask_text(item["content"], state=state)
+    return html_list
 
 
 @router.post("/ask/{thread_id}", summary="Ask a question over allowed departments")
@@ -706,10 +713,11 @@ def ask(
     masking_state = PiiMaskingState()
     masking = Masking()
     
+    
     masked_docs = masking.mask_texts(docs_list, masking_state)
     print("masking time", time.monotonic() - ss)
     # print("org_docs_list", docs_list)
-    # print("mask_docs_list", masked_docs)
+    print("mask_docs_list", masked_docs)
     
     s1 = time.monotonic()
     with PyMySQLSaver.from_conn_string(
@@ -725,19 +733,23 @@ def ask(
     #  print("answer",answer)
 
     siz = sys.getsizeof(rvm)
-    print("output",answer['messages'][-1].content)
+    # print("output",answer['messages'][-1].content)
     res=answer['messages'][-1].content
     res=res.replace("```json","").replace("```","")
     output = json.loads(res)
     e = time.monotonic()
     # print("response time",e-s)
-    print("output",output)
+    # print("output",output)
+    print("masked html_response",output['html_response'])
+
     # s1=time.monotonic()
     serialize_doc_list = documents_to_dicts(docs_list)
     print("output citation",output['citation'])
     my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
-
+    output['html_response']=unmask_html_list(output['html_response'])
+    print("unmasked html_response",output['html_response'])
     print("time1", time.monotonic() - s1)
+     
     llm_response = extract_text_only_from_html(output["html_response"])
     # print(type(llm_response),llm_response)
     if output["is_context_availale"] == "True":
@@ -768,7 +780,7 @@ def ask(
     db.add(chat_message)
 
     # 
-    print(type(thread_id),type(data.org_id),type(output["title"]))
+    # print(type(thread_id),type(data.org_id),type(output["title"]))
     update_chat_thread_description(
         db, data.org_id, current_user.id, thread_id, description=output["title"]
     )
@@ -783,19 +795,19 @@ def ask(
         if dept_id=='global':
             dept_id=0
   
-    user_license_and_token_update(
-        db=db,
-        user_id=current_user.id,
-        dept_id=dept_id,
-        tokens_used=answer["total_token"],
+    # user_license_and_token_update(
+    #     db=db,
+    #     user_id=current_user.id,
+    #     dept_id=dept_id,
+    #     tokens_used=answer["total_token"],
      
-    )
-    dept_license_and_token_update(
-        db=db,
-        dept_id=dept_id ,
-        org_id=current_user.org_id,
-        tokens_used=answer["total_token"],
-    )
+    # )
+    # dept_license_and_token_update(
+    #     db=db,
+    #     dept_id=dept_id ,
+    #     org_id=current_user.org_id,
+    #     tokens_used=answer["total_token"],
+    # )
     # cit=create_link_for_citation(db,current_user,citations=output['citation'],sources=docs_list)
     print("model response time", time.monotonic() - s1)
     print("total time", time.monotonic() - s)

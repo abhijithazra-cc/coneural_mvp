@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from app.models.organization_model import Organization
 from app.models.department_licenses_model import DepartmentLicenses
-
+from app.models.user_licenses_model import UserLicenses
 def dept_license_and_token_update(
     db: Session,
     org_id: int,
