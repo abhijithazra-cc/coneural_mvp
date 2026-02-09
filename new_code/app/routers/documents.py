@@ -50,10 +50,11 @@ MAX_FILE_BYTES = 5 * 1024 * 1024  # 5 MB
 import time
 import base64
 
-from app.utils.celery_app import celery_app
+from app.utils.celery_app import celery_app,upload_file_to_db_task
 from app.services.document import _ensure_org_admin,_ensure_org_admin_or_dept_admin_or_author,_ensure_can_manage_global_docs,_ensure_can_manage_dept_docs,_ensure_same_org,_check_duplicate
-
-
+from app.database import SessionLocal
+import base64, pickle, time, traceback
+from celery import shared_task
 
 
 from enum import Enum
@@ -62,12 +63,183 @@ class ScopeEnum(str, Enum):
     department = "department"
     global_scope = "global"
 
+
+
+
+# @router.post(
+#     "/",
+#     status_code=status.HTTP_201_CREATED,
+#     summary="Upload Org Document (PDF/DOCX/TXT) → chunk → store → index",
+# )
+# async def upload_org_document(
+#     org_id: int = Form(),
+#     dept_id:  Optional[int] = Form(0),
+
+#     tag: str = Form(""),
+#     scope: ScopeEnum = Form(ScopeEnum.department),
+#     files:  list[UploadFile] = File(...),
+#     db: Session = Depends(get_db),
+#     current: UserModel = Depends(get_current_active_user),
+# ):
+#     """
+#     Upload a document to a specific department (Department) and index it.
+
+#     Rules:
+#     - `dept_id` must belong to the given `org_id`.
+#     - Caller must be:
+#         * ORG ADMIN (UserType.ADMIN), or
+#         * The same `user_id` and have upload / author permission in `user_domain_access`.
+#     - We:
+#         * store doc metadata in `org_documents`
+#         * store text chunks in `doc_chunks`
+#         * create FAISS HNSW index for (org_id, dept_id) via `add_vectors(...)`
+#     """
+#     s=time.monotonic()
+    
+#     if not dept_id:
+#         _ensure_org_admin(db=db,current_user=current,org_id=org_id)
+#         doc_scope="global"
+         
+#     else:
+       
+#         sub = (
+#         db.query(Department)
+#         .filter(
+#             Department.id == dept_id,
+#             Department.org_id == org_id,
+#         )
+#         .first()
+#         )
+#         if not sub:
+#           raise HTTPException(
+#             status_code=404,
+#             detail="No access to department",
+#            )
+#         _ensure_org_admin_or_dept_admin_or_author(db=db,current_user=current,org_id=org_id,dept_id=dept_id)
+#         doc_scope="department"
+
+#     for file in files:
+
+#          payload = await file.read()
+#          if not payload:
+#             raise HTTPException(status_code=400, detail="No text in File")
+#          if len(payload) > MAX_FILE_BYTES:
+#             raise HTTPException(
+#             status_code=413,
+#             detail="File too large. Max size is 5 MB.",
+#             )
+
+#     # 5) Extract text
+#          try:
+#             str_time=str(time.time()).replace(".","")
+#             filename=str(org_id)+"_"+str(current.id)+"_"+str_time+"_"+file.filename
+#             text,docs = extract_text(
+#             payload,
+#             filename=filename,
+#             mimetype=file.content_type or "",
+            
+#               )
+#             new_text=text.lower()
+#             print("extracted text length",len(new_text))
+#             print("extacted content",new_text)
+#             duplicate=_check_duplicate(db=db,org_id=org_id,dept_id=dept_id,new_text=new_text,threshold=0.8)
+#             # if duplicate:
+#             #    raise HTTPException(
+#             #     status_code=409,
+#             #     detail=f"Duplicate document detected: {duplicate.title} (ID: {duplicate.id})",
+#             # )
+#             compdoc=CompareDoc()
+#             m= compdoc.create_minhash(text)
+#             doc_hash=pickle.dumps(m)
+
+#          except Exception as e:
+#             raise HTTPException(status_code=400, detail=f"Error extracting text: {str(e)}")
+
+#     # 6) Chunk text
+
+#          chunks = chunk_text(docs=docs, max_tokens=512, overlap=120)
+#         #  print("chunks",chunks)
+#          if not chunks:
+#             raise HTTPException(status_code=400, detail="No text chunks extracted from document")
+#          with open(f"app/filedata/{filename}", "wb") as f:
+#             f.write(payload)
+
+#          doc_bytes=base64.b64encode(payload)
+#     # if scope==ScopeEnum.global_scope:
+#     #     doc_scope="global"
+#     # else:
+#     #     doc_scope="department"
+         
+#          doc = OrgDocument(
+#         org_id=org_id,
+        
+#         uploaded_by=current.id,
+#         title=file.filename,
+#         tag= tag,
+#         scope=doc_scope,
+#         filename=filename,
+#         mime_type=file.content_type or "application/octet-stream",
+#         size_bytes=len(payload),
+#         file_bytes=doc_bytes,
+#         hash_bytes=doc_hash
+
+#             )
+#          if doc_scope=="global":
+#             doc.dept_id=None
+#          else:
+#             doc.dept_id=dept_id
+#          db.add(doc)
+#          db.flush()  # doc.id becomes available
+#     # await session.flush()  
+#          if doc_scope=="department":
+
+#             vs=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}")
+#             vs.add_documents(documents=chunks,document_id=doc.id,dept_id=dept_id)
+#          else:
+#             vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}")
+#             vectorStore.add_documents(documents=chunks,document_id=doc.id,dept_id='global')
+#          token=0
+#          for chunk in chunks:
+#                  token+=_count_tokens_for_openai_embeddings(model_name="text-embedding-ada-002",texts=[chunk.page_content])
+#          print("total tokens for embedding",token)
+         
+         
+#          if dept_id and doc_scope=="department":
+#             user_license_and_token_update(db=db,user_id=current.id,dept_id=dept_id,tokens_used=token)
+#             dept_license_and_token_update(db=db,dept_id=dept_id,org_id=org_id,tokens_used=token)
+#          else :
+
+#              org_license_and_token_update(db=db,org_id=org_id,tokens_used=token)
+#          db.add_all(
+#         [
+#             DocChunk(
+#                 document_id=doc.id,
+   
+#                 content=chunk.page_content,
+#             )
+#             for i, chunk in enumerate(chunks)
+#         ]
+#         )
+#          db.commit()
+#          db.refresh(doc)
+
+#     e=time.monotonic()
+#     return JSONResponse(
+#         status_code=200,
+#         content={"message": "document uploaded successfully","upload_time":e-s,"number_of_files":len(files)},
+#     )
+
+
+# from app.utils.celery_app import upload_pipeline
+
+
+# from app.utils.celery_app import celery_app
 @router.post(
     "/",
     status_code=status.HTTP_201_CREATED,
     summary="Upload Org Document (PDF/DOCX/TXT) → chunk → store → index",
 )
-async def upload_org_document(
+async def upload_doc(
     org_id: int = Form(),
     dept_id:  Optional[int] = Form(0),
 
@@ -76,44 +248,14 @@ async def upload_org_document(
     files:  list[UploadFile] = File(...),
     db: Session = Depends(get_db),
     current: UserModel = Depends(get_current_active_user),
+
 ):
-    """
-    Upload a document to a specific department (Department) and index it.
+    # payload = await file.read()
 
-    Rules:
-    - `dept_id` must belong to the given `org_id`.
-    - Caller must be:
-        * ORG ADMIN (UserType.ADMIN), or
-        * The same `user_id` and have upload / author permission in `user_domain_access`.
-    - We:
-        * store doc metadata in `org_documents`
-        * store text chunks in `doc_chunks`
-        * create FAISS HNSW index for (org_id, dept_id) via `add_vectors(...)`
-    """
-    s=time.monotonic()
-
-    if not dept_id:
-        _ensure_org_admin(db=db,current_user=current,org_id=org_id)
-        doc_scope="global"
-         
-    else:
-       
-        sub = (
-        db.query(Department)
-        .filter(
-            Department.id == dept_id,
-            Department.org_id == org_id,
-        )
-        .first()
-        )
-        if not sub:
-          raise HTTPException(
-            status_code=404,
-            detail="No access to department",
-           )
-        _ensure_org_admin_or_dept_admin_or_author(db=db,current_user=current,org_id=org_id,dept_id=dept_id)
-        doc_scope="department"
-
+    # file_path = f"/tmp/{time.time()}_{file.filename}"
+    # with open(file_path, "wb") as f:
+    #     f.write(payload)
+    response_list=[]
     for file in files:
 
          payload = await file.read()
@@ -124,106 +266,28 @@ async def upload_org_document(
             status_code=413,
             detail="File too large. Max size is 5 MB.",
             )
+         if scope==ScopeEnum.global_scope:
+           doc_scope="global"
+         else:
+           doc_scope="department"
 
-    # 5) Extract text
-         try:
-            str_time=str(time.time()).replace(".","")
-            filename=str(org_id)+"_"+str(current.id)+"_"+str_time+"_"+file.filename
-            text,docs = extract_text(
-            payload,
-            filename=filename,
-            mimetype=file.content_type or "",
-            
-              )
-            new_text=text.lower()
-            print("extracted text length",len(new_text))
-            print("extacted content",new_text)
-            duplicate=_check_duplicate(db=db,org_id=org_id,dept_id=dept_id,new_text=new_text,threshold=0.8)
-            # if duplicate:
-            #    raise HTTPException(
-            #     status_code=409,
-            #     detail=f"Duplicate document detected: {duplicate.title} (ID: {duplicate.id})",
-            # )
-            compdoc=CompareDoc()
-            m= compdoc.create_minhash(text)
-            doc_hash=pickle.dumps(m)
-
-         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Error extracting text: {str(e)}")
-
-    # 6) Chunk text
-
-         chunks = chunk_text(docs=docs, max_tokens=512, overlap=120)
-        #  print("chunks",chunks)
-         if not chunks:
-            raise HTTPException(status_code=400, detail="No text chunks extracted from document")
-         with open(f"app/filedata/{filename}", "wb") as f:
-            f.write(payload)
-
-         doc_bytes=base64.b64encode(payload)
-    # if scope==ScopeEnum.global_scope:
-    #     doc_scope="global"
-    # else:
-    #     doc_scope="department"
-         
-         doc = OrgDocument(
+         task = upload_file_to_db_task.delay(
+        payload=payload,
+        original_filename=file.filename,
+        content_type=file.content_type,
         org_id=org_id,
-        
-        uploaded_by=current.id,
-        title=file.filename,
-        tag= tag,
-        scope=doc_scope,
-        filename=filename,
-        mime_type=file.content_type or "application/octet-stream",
-        size_bytes=len(payload),
-        file_bytes=doc_bytes,
-        hash_bytes=doc_hash
-
-            )
-         if doc_scope=="global":
-            doc.dept_id=None
-         else:
-            doc.dept_id=dept_id
-         db.add(doc)
-         db.flush()  # doc.id becomes available
-    # await session.flush()  
-         if doc_scope=="department":
-
-            vs=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}")
-            vs.add_documents(documents=chunks,document_id=doc.id,dept_id=dept_id)
-         else:
-            vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{org_id}")
-            vectorStore.add_documents(documents=chunks,document_id=doc.id,dept_id='global')
-         token=0
-         for chunk in chunks:
-                 token+=_count_tokens_for_openai_embeddings(model_name="text-embedding-ada-002",texts=[chunk.page_content])
-         print("total tokens for embedding",token)
-         
-         
-         if dept_id and doc_scope=="department":
-            user_license_and_token_update(db=db,user_id=current.id,dept_id=dept_id,tokens_used=token)
-            dept_license_and_token_update(db=db,dept_id=dept_id,org_id=org_id,tokens_used=token)
-         else :
-
-             org_license_and_token_update(db=db,org_id=org_id,tokens_used=token)
-         db.add_all(
-        [
-            DocChunk(
-                document_id=doc.id,
-   
-                content=chunk.page_content,
-            )
-            for i, chunk in enumerate(chunks)
-        ]
+        dept_id=dept_id,
+        user_id=current.id,
+        tag=tag,
+        doc_scope=doc_scope,
         )
-         db.commit()
-         db.refresh(doc)
+         response_list.append({"filename": file.filename, "task_id": task.id})
 
-    e=time.monotonic()
-    return JSONResponse(
-        status_code=200,
-        content={"message": "document uploaded successfully","upload_time":e-s,"number_of_files":len(files)},
-    )
+    return {
+        "message": "Upload started",
+        "response": response_list,
+    }
+
 
 from langchain_community.callbacks.manager import get_openai_callback
 
