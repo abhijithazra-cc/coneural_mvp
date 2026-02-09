@@ -12,7 +12,7 @@ class UserLicenses(Base):
     __tablename__ = "user_licenses"   
     id = Column(Integer, primary_key=True, index=True)
 
-    dept_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=False, index=True)
+    # dept_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     allocated_licenses = Column(Integer, nullable=False, default=0)
     total_licenses = Column(Integer, nullable=False, server_default="0")

@@ -118,68 +118,103 @@ def org_license_and_token_update(
     db.execute(upd)
     db.commit()
 
+# def user_license_and_token_update(
+#     db: Session,
+
+#     user_id: int,
+#     # dept_id: int,
+#     tokens_used: int,
+
+# ) -> None:
+#     """
+#     Updates the user_licenses table for a specific user and department
+#     when that user uploads a file that consumes embedding tokens.
+
+#     Adds to the used_tokens column (other columns are generated).
+#     """
+#     metadata = MetaData()
+#     user_licenses = Table("user_licenses", metadata, autoload_with=db.bind)
+#     # print("dept_id in embedding token",dept_id,type(dept_id))
+#     if dept_id ==0:
+#         stmt=select(user_licenses.c.used_tokens).where(
+#             user_licenses.c.user_id == user_id,
+#             user_licenses.c.dept_id.is_(None),
+#         )
+#     else:
+#        stmt = select(user_licenses.c.used_tokens).where(
+#         user_licenses.c.user_id == user_id,
+#         user_licenses.c.dept_id == dept_id,
+    
+#        )
+#     result = db.execute(stmt).fetchone()
+
+#     if not result:
+#         if dept_id ==0:
+#             user_license=UserLicenses(user_id=user_id, used_tokens=tokens_used)
+#         else:
+#             user_license=UserLicenses(user_id=user_id, dept_id=dept_id, used_tokens=tokens_used)
+        
+#         db.add(user_license)
+#         db.commit()
+#         return
+
+
+#     new_used_tokens = (result.used_tokens or 0) + tokens_used
+#     if dept_id ==0:
+#         upd=(
+#             update(user_licenses)
+#             .where(
+#                 user_licenses.c.user_id == user_id,
+#                 user_licenses.c.dept_id.is_(None),
+#             )
+#             .values(
+#                 used_tokens=new_used_tokens,
+#                 updated_at=datetime.utcnow()
+#             )
+#         )
+#         db.execute(upd)
+#         db.commit()
+#         return
+#     upd = (
+#         update(user_licenses)
+#         .where(
+#             user_licenses.c.user_id == user_id,
+#             user_licenses.c.dept_id == dept_id
+#         )
+#         .values(
+#             used_tokens=new_used_tokens,
+#             updated_at=datetime.utcnow()
+#         )
+#     )
+#     db.execute(upd)
+#     db.commit()
+
 def user_license_and_token_update(
     db: Session,
-
     user_id: int,
-    dept_id: int,
-    tokens_used: int,
-
-) -> None:
+  
+    tokens_used: int) -> None:
     """
-    Updates the user_licenses table for a specific user and department
+    Updates the user_licenses table for a specific user and organization
     when that user uploads a file that consumes embedding tokens.
-
     Adds to the used_tokens column (other columns are generated).
     """
     metadata = MetaData()
     user_licenses = Table("user_licenses", metadata, autoload_with=db.bind)
-    print("dept_id in embedding token",dept_id,type(dept_id))
-    if dept_id ==0:
-        stmt=select(user_licenses.c.used_tokens).where(
-            user_licenses.c.user_id == user_id,
-            user_licenses.c.dept_id.is_(None),
-        )
-    else:
-       stmt = select(user_licenses.c.used_tokens).where(
-        user_licenses.c.user_id == user_id,
-        user_licenses.c.dept_id == dept_id,
-    
-       )
+    stmt = select(user_licenses.c.used_tokens).where(
+        user_licenses.c.user_id == user_id
+    )
     result = db.execute(stmt).fetchone()
-
     if not result:
-        if dept_id ==0:
-            user_license=UserLicenses(user_id=user_id, used_tokens=tokens_used)
-        else:
-            user_license=UserLicenses(user_id=user_id, dept_id=dept_id, used_tokens=tokens_used)
-        
+        user_license=UserLicenses(user_id=user_id, used_tokens=tokens_used)
         db.add(user_license)
         db.commit()
         return
-
-
     new_used_tokens = (result.used_tokens or 0) + tokens_used
-    if dept_id ==0:
-        upd=(
-            update(user_licenses)
-            .where(
-                user_licenses.c.user_id == user_id,
-                user_licenses.c.dept_id.is_(None),
-            )
-            .values(
-                used_tokens=new_used_tokens,
-                updated_at=datetime.utcnow()
-            )
-        )
-        db.execute(upd)
-        db.commit()
-        return
     upd = (
         update(user_licenses)
         .where(
-            user_licenses.c.user_id == user_id,
-            user_licenses.c.dept_id == dept_id
+            user_licenses.c.user_id == user_id
         )
         .values(
             used_tokens=new_used_tokens,
@@ -187,7 +222,9 @@ def user_license_and_token_update(
         )
     )
     db.execute(upd)
-    db.commit()
+    db.commit() 
+
+
 def _get_openai_embedding_encoding(model_name: str):
     """
     Returns the correct tokenizer for the given OpenAI embedding model.
