@@ -733,6 +733,7 @@ def extract_and_store_doc_task(
         ]
 
         return {
+            "user_id": user_id,
             "doc_id": doc.id,
             "docs": serializable_docs,
             "org_id": org_id,
@@ -763,7 +764,7 @@ def chunk_and_store_task(payload: dict):
             )
             for d in payload["docs"]
         ]
-        text=" ".join([doc.page_content for doc in docs])
+        # text=" ".join([doc.page_content for doc in docs])
         chunks = chunk_text(
             docs=docs,
             max_tokens=512,
@@ -787,7 +788,7 @@ def chunk_and_store_task(payload: dict):
         return {
             "doc_id": payload["doc_id"],
             "chunks": [{"page_content": c.page_content, "metadata": c.metadata} for c in chunks],  # ✅ strings only
-    
+            "user_id": payload["user_id"],
             "org_id": payload["org_id"],
             "dept_id": payload["dept_id"],
             "scope": payload["scope"],
@@ -830,26 +831,42 @@ def embed_and_index_task(payload: dict):
             )
             for chunk in payload["chunks"]
         )
-
-        if payload["dept_id"] and payload["scope"] == "department":
-            user_license_and_token_update(
+        user_license_and_token_update(
                 db,
-                payload["doc_id"],
-                payload["dept_id"],
+                payload["user_id"],
+            
                 token_count,
             )
-            dept_license_and_token_update(
-                db,
-                payload["dept_id"],
-                payload["org_id"],
-                token_count,
-            )
-        else:
-            org_license_and_token_update(
+        org_license_and_token_update(
                 db,
                 payload["org_id"],
                 token_count,
             )
+        # if payload["dept_id"] and payload["scope"] == "department":
+        #     user_license_and_token_update(
+        #         db,
+        #         payload["user_id"],
+        #         payload["dept_id"],
+        #         token_count,
+        #     )
+        #     # user_license_and_token_update(
+        #     #     db,
+        #     #     payload["doc_id"],
+        #     #     payload["dept_id"],
+        #     #     token_count,
+        #     # )
+        #     dept_license_and_token_update(
+        #         db,
+        #         payload["dept_id"],
+        #         payload["org_id"],
+        #         token_count,
+        #     )
+        # else:
+        #     org_license_and_token_update(
+        #         db,
+        #         payload["org_id"],
+        #         token_count,
+        #     )
 
         db.commit()
         return {"status": "success", "doc_id": payload["doc_id"]}
