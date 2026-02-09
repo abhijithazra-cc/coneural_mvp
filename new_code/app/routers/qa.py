@@ -328,7 +328,7 @@ from app.Rag.PdfUploader import upload_pdf_to_github
 from app.Rag.TexttoPdf import text_to_pdf_bytes
 
 
-from app.utils.celery_app import filter_sources_by_citation, celery_app
+from app.utils.celery_app import  celery_app
 from celery.result import AsyncResult
 
 import sys
@@ -745,7 +745,7 @@ def ask(
     # s1=time.monotonic()
     serialize_doc_list = documents_to_dicts(docs_list)
     print("output citation",output['citation'])
-    my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
+    # my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
     output['html_response']=unmask_html_list(output['html_response'])
     print("unmasked html_response",output['html_response'])
     print("time1", time.monotonic() - s1)
@@ -773,7 +773,7 @@ def ask(
             user_id=current_user.id,
             org_id=data.org_id,
             tokens=answer["total_token"],
-            citation=my_link,
+            citation="my_link",
             html_response=output["html_response"],  
             unanswer_query=True,
         )
@@ -819,7 +819,7 @@ def ask(
         "citations": output["citation"],
         "total_token": answer["total_token"],
      
-        "links": my_link,
+        "links": "my_link",
     }
     # return {"query_time":e-s,"response":output['response'],"html_response":output['html_response'],"citations":output['citation'],"total_token":answer['total_token'],"is_context_available":output['is_context_availale']}
     # return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list,"size":siz}
