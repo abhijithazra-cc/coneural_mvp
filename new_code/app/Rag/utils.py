@@ -73,12 +73,78 @@ class TextExtractor(HTMLParser):
         if text:
             self.texts.append(text)
 
-def extract_text_only_from_html(html_response: List[dict]) -> str:
+# def extract_text_only_from_html(html_response: List[dict]) -> str:
+#     result = []
+
+#     for item in html_response:
+#         parser = TextExtractor()
+#         parser.feed(item["content"])
+#         result.append(" ".join(parser.texts))
+
+#     return " ".join(result)
+from html.parser import HTMLParser
+from typing import List, Dict, Any
+
+
+class TextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.texts = []
+
+    def handle_data(self, data):
+        if data:
+            self.texts.append(data.strip())
+
+
+def _normalize_content(content: Any) -> str:
+    """
+    Ensures content is always a string.
+    LLM sometimes sends:
+    - string
+    - list of strings
+    - list of dict
+    - None
+    """
+    if content is None:
+        return ""
+
+    # already string
+    if isinstance(content, str):
+        return content
+
+    # list -> join everything
+    if isinstance(content, list):
+        try:
+            return " ".join(str(x) for x in content)
+        except Exception:
+            return str(content)
+
+    # fallback
+    return str(content)
+
+
+def extract_text_only_from_html(html_response: List[Dict[str, Any]]) -> str:
+    """
+    Converts structured html_response into plain text.
+    Handles all LLM weird formats safely.
+    """
+    if not html_response:
+        return ""
+
     result = []
 
     for item in html_response:
         parser = TextExtractor()
-        parser.feed(item["content"])
+
+        content = _normalize_content(item.get("content"))
+
+        try:
+            parser.feed(content)
+        except Exception:
+            # if HTML parsing fails, just use raw content
+            parser.texts.append(content)
+
         result.append(" ".join(parser.texts))
 
-    return " ".join(result)
+    return " ".join(result).strip()
+

@@ -10,7 +10,7 @@ class OptionEnum(str, Enum):
     opt3 = 3
 class AskRequest(BaseModel):
 
-    org_id: int
+    # org_id: int
 
     q: str
     top_k:int
@@ -21,7 +21,7 @@ class AskRequest(BaseModel):
 class AskRequestOnDocument(BaseModel):
  
     document_id:list[int]
-    org_id: int
+    # org_id: int
     q: str
     top_k:int
 

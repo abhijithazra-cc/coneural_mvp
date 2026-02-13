@@ -20,8 +20,7 @@ class ChatMessage(Base):
     query = Column(Text)
     response = Column(Text)
     thread_id=Column(Integer, ForeignKey("chat_threads.id", ondelete="CASCADE"), nullable=False)
-    user_id=Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+
     unanswer_query=Column(Boolean,default=False)
     tokens=Column(Integer,default=0)
     citation=Column(JSON,nullable=True)

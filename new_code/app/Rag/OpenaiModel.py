@@ -138,6 +138,13 @@ If the answer does NOT appear in the provided context:
 Do NOT hallucinate filenames, document names, metadata, page numbers, dates, or sources.
 • Only reference documents that are explicitly present in the provided context.
 
+#OUTPUT FORMAT
+
+Return a valid Python dictionary.
+Do NOT return JSON.
+Do NOT use ``` fences.
+
+Keys and strings must use double quotes.
 
 IMPORTANT: Follow the output format strictly.
 ==========================================

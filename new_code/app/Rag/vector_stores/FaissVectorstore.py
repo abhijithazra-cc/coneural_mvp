@@ -89,6 +89,7 @@ class FaissVectorstore(IVectorstore):
                 c.metadata["document_id"] = document_id
                 c.metadata["date_time"]=now.isoformat()
                 c.metadata["dept_id"] = dept_id
+                print("dept_id in add_documents",dept_id)
 
             store.add_documents(documents=documents)
             print(f"✅ Added {len(documents)} chunks (document_id={document_id})")
@@ -143,20 +144,49 @@ class FaissVectorstore(IVectorstore):
         return docs
 
     # ---------- Delete document + its chunks ----------
+    # def delete_document_by_id(self, document_id: str):
+    #     store = self._load_or_create_store()
+    #     # find matching IDs in FAISS index
+    #     ids_to_delete = [
+    #         id_ for id_, doc in store.docstore._dict.items()
+    #         if doc.metadata.get("document_id") == document_id
+    #     ]
+    #     print("deleted ids",ids_to_delete)
+    #     if not ids_to_delete:
+    #         print(f"⚠️ No chunks found for document_id={document_id}")
+    #         return
+    #     store.delete(ids=ids_to_delete)
+    #     store.save_local(self.persist_dir)
+    #     self.vectorstore = store
+    #     # chunks=self.get_chunks_by_document_id(document_id=document_id)
+    #     # print(f"chunks: {chunks}")
+    #     print(f"🗑️ Deleted {len(ids_to_delete)} chunks for document_id={document_id}")
+
+
     def delete_document_by_id(self, document_id: str):
-        store = self._load_or_create_store()
-        # find matching IDs in FAISS index
-        ids_to_delete = [
-            id_ for id_, doc in store.docstore._dict.items()
-            if doc.metadata.get("document_id") == document_id
-        ]
-        print("deleted ids",ids_to_delete)
-        if not ids_to_delete:
-            print(f"⚠️ No chunks found for document_id={document_id}")
-            return
+      store = self._load_or_create_store()
+
+    # 1) find docstore IDs (one per chunk) that belong to this document_id
+      ids_to_delete = [
+        docstore_id
+        for docstore_id, doc in store.docstore._dict.items()
+        if doc.metadata.get("document_id") == document_id
+    ]
+      print("deleted ids", ids_to_delete)
+
+      if not ids_to_delete:
+        print(f"⚠️ No chunks found for document_id={document_id}")
+        return
+
+    # 2) try LangChain delete (will fail for HNSW/Flat often)
+      try:
         store.delete(ids=ids_to_delete)
         store.save_local(self.persist_dir)
         self.vectorstore = store
-        # chunks=self.get_chunks_by_document_id(document_id=document_id)
-        # print(f"chunks: {chunks}")
         print(f"🗑️ Deleted {len(ids_to_delete)} chunks for document_id={document_id}")
+        return
+
+      except RuntimeError as e:
+        # We only fallback on the known FAISS limitation
+        if "remove_ids not implemented" not in str(e):
+            raise
