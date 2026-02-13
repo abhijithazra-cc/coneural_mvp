@@ -234,59 +234,215 @@ class ScopeEnum(str, Enum):
 
 
 # from app.utils.celery_app import celery_app
+
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+from typing import Optional
+
+from app.models.user_access_department_model import UserAccessDepartment, UserType as AccessUserType
+from app.models.department_model import Department as DepartmentModel
+from app.models.user_model import User as UserModel
+
+
+def _is_org_admin(db: Session, user_id: int, org_id: int) -> bool:
+    row = (
+        db.query(UserAccessDepartment)
+        .filter(
+            UserAccessDepartment.user_id == user_id,
+            UserAccessDepartment.org_id == org_id,
+            UserAccessDepartment.dept_id.is_(None),
+            UserAccessDepartment.user_type == AccessUserType.ADMIN,
+        )
+        .first()
+    )
+    return row is not None
+
+
+def _ensure_same_org(current: UserModel, org_id: int) -> None:
+    if getattr(current, "org_id", None) != org_id:
+        raise HTTPException(status_code=403, detail="User does not belong to this organization")
+
+
+def _get_dept_access(db: Session, user_id: int, org_id: int, dept_id: int) -> Optional[UserAccessDepartment]:
+    return (
+        db.query(UserAccessDepartment)
+        .filter(
+            UserAccessDepartment.user_id == user_id,
+            UserAccessDepartment.org_id == org_id,
+            UserAccessDepartment.dept_id == dept_id,
+        )
+        .first()
+    )
+
+
+def _ensure_can_manage_dept_docs(db: Session, current: UserModel, org_id: int, dept_id: int) -> None:
+    _ensure_same_org(current, org_id)
+
+    if _is_org_admin(db, current.id, org_id):
+        return
+
+    access = _get_dept_access(db, current.id, org_id, dept_id)
+    if not access:
+        raise HTTPException(status_code=403, detail="No access record for this department")
+
+    if access.user_type in (AccessUserType.DEPT_ADMIN, AccessUserType.AUTHOR):
+        return
+
+    raise HTTPException(status_code=403, detail="Only org admin, dept admin, or author can manage documents")
+
+
+def _ensure_can_manage_global_docs(db: Session, current: UserModel, org_id: int) -> None:
+    _ensure_same_org(current, org_id)
+    if not _is_org_admin(db, current.id, org_id):
+        raise HTTPException(status_code=403, detail="Only org admin can manage GLOBAL documents")
+
+
+# from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+# from sqlalchemy.orm import Session
+# from typing import Optional
+
+# from app.database import get_db
+# from app.services.auth import get_current_active_user
+# from app.models.user_model import User as UserModel
+# from app.models.department_model import Department as DepartmentModel
+# from app.schemas.enums import ScopeEnum  # wherever your ScopeEnum is
+# from app.celery_tasks import upload_file_to_db_task  # adjust import
+# import time
+
+
+
+MAX_FILE_BYTES = 5 * 1024 * 1024  # example, keep your existing
+
+
 @router.post(
     "/",
     status_code=status.HTTP_201_CREATED,
     summary="Upload Org Document (PDF/DOCX/TXT) → chunk → store → index",
 )
 async def upload_doc(
-    org_id: int = Form(),
-    dept_id:  Optional[int] = Form(0),
-
+    org_id: int = Form(None),
+    dept_id: Optional[int] = Form(None),
     tag: str = Form(""),
     scope: ScopeEnum = Form(ScopeEnum.department),
-    files:  list[UploadFile] = File(...),
+    files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
     current: UserModel = Depends(get_current_active_user),
-
 ):
-    # payload = await file.read()
+    # ---- normalize scope (match your earlier router semantics) ----
+    # You used ScopeEnum.global_scope vs ScopeEnum.department earlier.
+    # Map that to string scope for storage/task payload.
+    print("dept_id",dept_id)
+    if dept_id is None:
+        doc_scope="global"
+    # if scope == ScopeEnum.global_scope:
+        # scope_norm = "global"
+    else:
+        doc_scope="dept"
+        # scope_norm = "dept"  # "department" also ok; keep consistent with rest of code
+    # print("doc_scope",doc_scope,"scope_norm",scope_norm)
+    # ---- access control + dept validation ----
+    if doc_scope == "global":
+        _ensure_can_manage_global_docs(db, current, current.org_id)
+        dept_id_final = None
+        doc_scope = "global"
+    else:
+        if dept_id is None:
+            raise HTTPException(status_code=400, detail="dept_id is required when scope is department")
 
-    # file_path = f"/tmp/{time.time()}_{file.filename}"
-    # with open(file_path, "wb") as f:
-    #     f.write(payload)
-    response_list=[]
-    for file in files:
+        dept_id_final = int(dept_id)
 
-         payload = await file.read()
-         if not payload:
-            raise HTTPException(status_code=400, detail="No text in File")
-         if len(payload) > MAX_FILE_BYTES:
-            raise HTTPException(
-            status_code=413,
-            detail="File too large. Max size is 5 MB.",
-            )
-         if scope==ScopeEnum.global_scope:
-           doc_scope="global"
-         else:
-           doc_scope="department"
-
-         task = upload_file_to_db_task.delay(
-        payload=payload,
-        original_filename=file.filename,
-        content_type=file.content_type,
-        org_id=org_id,
-        dept_id=dept_id,
-        user_id=current.id,
-        tag=tag,
-        doc_scope=doc_scope,
+        dept_row = (
+            db.query(DepartmentModel)
+            .filter(DepartmentModel.id == dept_id_final, DepartmentModel.org_id == org_id)
+            .first()
         )
-         response_list.append({"filename": file.filename, "task_id": task.id})
+        if not dept_row:
+            raise HTTPException(status_code=404, detail="Department not found in this organization")
 
-    return {
-        "message": "Upload started",
-        "response": response_list,
-    }
+        _ensure_can_manage_dept_docs(db, current, org_id, dept_id_final)
+        doc_scope = "department"
+
+    # ---- schedule tasks ----
+    response_list = []
+    for file in files:
+        payload = await file.read()
+
+        if not payload:
+            raise HTTPException(status_code=400, detail=f"Empty file: {file.filename}")
+
+        if len(payload) > MAX_FILE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large: {file.filename}. Max size is {MAX_FILE_BYTES} bytes.",
+            )
+
+        task = upload_file_to_db_task.delay(
+            payload=payload,
+            original_filename=file.filename,
+            content_type=file.content_type,
+            org_id=current.org_id,
+            dept_id=dept_id_final,   # None for global
+            user_id=current.id,
+            tag=tag,
+            doc_scope=doc_scope,
+        )
+        response_list.append({"filename": file.filename, "task_id": task.id})
+
+    return {"message": "Upload started", "response": response_list}
+
+# @router.post(
+#     "/",
+#     status_code=status.HTTP_201_CREATED,
+#     summary="Upload Org Document (PDF/DOCX/TXT) → chunk → store → index",
+# )
+# async def upload_doc(
+#     org_id: int = Form(),
+#     dept_id:  Optional[int] = Form(0),
+
+#     tag: str = Form(""),
+#     scope: ScopeEnum = Form(ScopeEnum.department),
+#     files:  list[UploadFile] = File(...),
+#     db: Session = Depends(get_db),
+#     current: UserModel = Depends(get_current_active_user),
+
+# ):
+#     # payload = await file.read()
+
+#     # file_path = f"/tmp/{time.time()}_{file.filename}"
+#     # with open(file_path, "wb") as f:
+#     #     f.write(payload)
+#     response_list=[]
+#     for file in files:
+
+#          payload = await file.read()
+#          if not payload:
+#             raise HTTPException(status_code=400, detail="No text in File")
+#          if len(payload) > MAX_FILE_BYTES:
+#             raise HTTPException(
+#             status_code=413,
+#             detail="File too large. Max size is 5 MB.",
+#             )
+#          if scope==ScopeEnum.global_scope:
+#            doc_scope="global"
+#          else:
+#            doc_scope="department"
+
+#          task = upload_file_to_db_task.delay(
+#         payload=payload,
+#         original_filename=file.filename,
+#         content_type=file.content_type,
+#         org_id=org_id,
+#         dept_id=dept_id,
+#         user_id=current.id,
+#         tag=tag,
+#         doc_scope=doc_scope,
+#         )
+#          response_list.append({"filename": file.filename, "task_id": task.id})
+
+#     return {
+#         "message": "Upload started",
+#         "response": response_list,
+#     }
 
 
 from langchain_community.callbacks.manager import get_openai_callback
@@ -438,19 +594,20 @@ def delete_org_document(
     current: UserModel = Depends(get_current_active_user),
 ):
     s=time.monotonic()
+
     doc = db.query(OrgDocument).filter(OrgDocument.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
     # Only org admin of that org can delete
     _ensure_org_admin(db=db,current_user=current,org_id=doc.org_id)
-
+    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{current.org_id}")
+    vectorStore.delete_document_by_id(document_id=document_id)
     # Deleting doc will cascade to chunks (because of FK ondelete="CASCADE" if set)
     db.delete(doc)
     db.commit()
     
-    vectorStore=vectorManager.get_store(embeddings=embeddings,persist_dir=f"{BASE_DIR}/{current.org_id}/dept/{doc.dept_id}")
-    vectorStore.delete_document_by_id(document_id=document_id)
+
     # vectorManager.load_store(persist_dir=f"{BASE_DIR}\{current.org_id}\dept\{doc.dept_id}")
     # NOTE: We are not removing from FAISS index here; next time you rebuild index
     # you would re-add remaining chunks. Implementing FAISS delete is possible but

@@ -312,7 +312,7 @@ def update_chat_thread_description(
     #     return
 
     #  description already set → DO NOT overwrite
-    if chat_thread.description :
+    if chat_thread and chat_thread.description :
         return
     # print("ggg",description)
     # only NULL → update
@@ -328,7 +328,7 @@ from app.Rag.PdfUploader import upload_pdf_to_github
 from app.Rag.TexttoPdf import text_to_pdf_bytes
 
 
-from app.utils.celery_app import  celery_app
+from app.utils.celery_app import  celery_app ,filter_sources_by_citation
 from celery.result import AsyncResult
 
 import sys
@@ -349,17 +349,37 @@ def documents_to_dicts(docs: list[Document]) -> list[dict]:
     return [document_to_dict(doc) for doc in docs]
 
 
+# def _is_org_admin(db: Session, user: UserModel, org_id: int) -> bool:
+#     admin = db.query(UserModel).filter(
+#             UserModel.id == user.id,
+#             UserAccessDepartment.org_id == org_id,
+#             UserAccessDepartment.user_type == UserType.ADMIN,
+#         )   .first()
+    
+#     for adm in  admin:
+#         print("admin",adm.id,adm.org_id,adm.user_type)
+#     return admin
+from app.models.user_access_department_model import UserAccessDepartment, UserType
+
 def _is_org_admin(db: Session, user: UserModel, org_id: int) -> bool:
+
     admin = (
-        db.query(UserModel)
+        db.query(UserAccessDepartment)
         .filter(
-            UserModel.id == user.id,
+            UserAccessDepartment.user_id == user.id,
             UserAccessDepartment.org_id == org_id,
             UserAccessDepartment.user_type == UserType.ADMIN,
-        )   
+        )
         .first()
     )
-    return admin
+
+    if admin:
+        print("✅ USER IS ADMIN:", admin.user_id, admin.org_id)
+        return True
+    else:
+        print("❌ USER IS NOT ADMIN")
+        return False
+
 
 
 @router.get("/list_user_threads")
@@ -641,6 +661,128 @@ def unmask_html_list(html_list: list) -> list:
             item["content"] = masking.unmask_text(item["content"], state=state)
     return html_list
 
+def safe_json_from_llm(text: str):
+    s = text.strip()
+
+    # remove code fences
+    s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s*```$", "", s)
+
+    # extract the first full JSON object (handles extra text before/after)
+    start = s.find("{")
+    end = s.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("No JSON object found in LLM output")
+
+    candidate = s[start:end+1].strip()
+
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError as e:
+        # show nearby characters where it broke
+        left = max(0, e.pos - 200)
+        right = min(len(candidate), e.pos + 200)
+        ctx = candidate[left:right]
+        raise ValueError(
+            f"Invalid JSON: {e}\n--- context around pos {e.pos} ---\n{ctx}\n-------------------------------"
+        ) from e
+
+
+
+
+import json
+
+def extract_json_object(text: str) -> str:
+    """Extract the outermost JSON object from a bigger string."""
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("No JSON object found in text")
+    return text[start:end+1]
+
+
+def escape_quotes_inside_content_fields(raw: str) -> str:
+    """
+    Fix invalid JSON where inner quotes appear inside values of "content": " ... "
+    Example: Liquidity is lowest in the "gap" between ...
+    We convert those inner quotes to \"
+    """
+    s = raw
+    out = []
+    i = 0
+    n = len(s)
+
+    def is_escaped(pos: int) -> bool:
+        # returns True if s[pos] is escaped by odd number of backslashes before it
+        backslashes = 0
+        j = pos - 1
+        while j >= 0 and s[j] == "\\":
+            backslashes += 1
+            j -= 1
+        return (backslashes % 2) == 1
+
+    while i < n:
+        # detect `"content"` key
+        if s.startswith('"content"', i):
+            out.append('"content"')
+            i += len('"content"')
+
+            # copy whitespace + colon
+            while i < n and s[i].isspace():
+                out.append(s[i]); i += 1
+            if i < n and s[i] == ":":
+                out.append(":"); i += 1
+            while i < n and s[i].isspace():
+                out.append(s[i]); i += 1
+
+            # now should be opening quote for the string value
+            if i < n and s[i] == '"':
+                out.append('"')
+                i += 1
+
+                # inside the content string until we reach its real closing quote
+                while i < n:
+                    ch = s[i]
+
+                    if ch == '"' and not is_escaped(i):
+                        # This quote could be:
+                        # 1) the real end of the content string  -> followed by optional spaces then , or }
+                        # 2) an inner quote like "gap"           -> should be escaped
+                        j = i + 1
+                        while j < n and s[j].isspace():
+                            j += 1
+                        if j < n and s[j] in [",", "}"]:
+                            # real closing quote
+                            out.append('"')
+                            i += 1
+                            break
+                        else:
+                            # inner quote in the content -> escape it
+                            out.append('\\"')
+                            i += 1
+                            continue
+
+                    out.append(ch)
+                    i += 1
+
+                continue
+
+        # normal copy
+        out.append(s[i])
+        i += 1
+
+    return "".join(out)
+
+
+def parse_llm_like_json(text: str) -> dict:
+    """Full pipeline: extract JSON -> repair content quotes -> json.loads -> dict"""
+    obj = extract_json_object(text)
+    repaired = escape_quotes_inside_content_fields(obj)
+    return json.loads(repaired)
+
+
+
+
 
 @router.post("/ask/{thread_id}", summary="Ask a question over allowed departments")
 def ask(
@@ -652,14 +794,15 @@ def ask(
     s = time.monotonic()
     # if not _can_read(db, current_user, org_id, dept_id):
     #     raise HTTPException(status_code=403, detail="No read access to this department")
-    _is_org_exist(db, org_id=data.org_id)
+    _is_org_exist(db, org_id=current_user.org_id)
     print(data, thread_id, current_user.id, current_user.org_id)
-    admin = _is_org_admin(db, current_user, data.org_id)
+    admin = _is_org_admin(db, current_user, current_user.org_id)
     if admin:
+        print("is admin ?")
         user_allowed_dept_ids = _list_of_departments(db, current_user)
     else:
         user_allowed_dept_ids = list_user_access(
-            user_id=current_user.id, org_id=data.org_id, db=db
+            user_id=current_user.id, org_id=current_user.org_id, db=db
         )
     print("all sub org ids", user_allowed_dept_ids,type(user_allowed_dept_ids))
 
@@ -681,7 +824,7 @@ def ask(
     #     )
     #     retrieval_list.append(rv)
     vectorStore = vectorManager.get_store(
-        embeddings=embeddings, persist_dir=f"{BASE_DIR}/{data.org_id}"
+        embeddings=embeddings, persist_dir=f"{BASE_DIR}/{current_user.org_id}"
     )
     # rv = retriever.get_retreiver(
     #     vector_store=vectorStore.get_vector_store(),
@@ -695,13 +838,20 @@ def ask(
     #     top_n=data.top_k,
     #     document_id=user_allowed_dept_ids[3],
     # )
-    user_allowed_dept_ids.append('global')
-    rv = retriever.get_retreiver_by_department_ids(
+    if admin:
+        rv = retriever.get_retreiver(
+        vector_store=vectorStore.get_vector_store(),
+        search_type="similarity",
+        top_n=data.top_k
+    )
+    else:
+      user_allowed_dept_ids.append("global")
+      rv = retriever.get_retreiver_by_department_ids(
         vector_store=vectorStore.get_vector_store(),
         search_type="similarity",
         top_n=data.top_k,
         dept_ids=user_allowed_dept_ids
-    )
+      )
     retrieval_list.append(rv)
     print("test time", time.monotonic() - s)
     rvm = EnsembleRetriever(retrievers=retrieval_list)
@@ -717,7 +867,7 @@ def ask(
     masked_docs = masking.mask_texts(docs_list, masking_state)
     print("masking time", time.monotonic() - ss)
     # print("org_docs_list", docs_list)
-    print("mask_docs_list", masked_docs)
+    # print("mask_docs_list", masked_docs)
     
     s1 = time.monotonic()
     with PyMySQLSaver.from_conn_string(
@@ -734,9 +884,23 @@ def ask(
 
     siz = sys.getsizeof(rvm)
     # print("output",answer['messages'][-1].content)
-    res=answer['messages'][-1].content
+    import json, re
+
+    # print("output", answer['messages'][-1].content)
+    res = answer['messages'][-1].content
+    print("type of res", type(res))
+
+    
+    # output = safe_json_from_llm(res)
+
+    e = time.monotonic()
+
+
+    # res=answer['messages'][-1].content
     res=res.replace("```json","").replace("```","")
-    output = json.loads(res)
+    print("output after removing code fence",res)
+    output=parse_llm_like_json(res)
+    # output = json.loads(res)
     e = time.monotonic()
     # print("response time",e-s)
     # print("output",output)
@@ -745,7 +909,7 @@ def ask(
     # s1=time.monotonic()
     serialize_doc_list = documents_to_dicts(docs_list)
     print("output citation",output['citation'])
-    # my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
+    my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
     output['html_response']=unmask_html_list(output['html_response'])
     print("unmasked html_response",output['html_response'])
     print("time1", time.monotonic() - s1)
@@ -758,8 +922,7 @@ def ask(
             query=data.q,
             response=llm_response,
             thread_id=thread_id,
-            user_id=current_user.id,
-            org_id=data.org_id,
+
             tokens=answer["total_token"],
             citation=my_link,
             html_response=output["html_response"],
@@ -770,10 +933,9 @@ def ask(
             query=data.q,
             response=llm_response,
             thread_id=thread_id,
-            user_id=current_user.id,
-            org_id=data.org_id,
+
             tokens=answer["total_token"],
-            citation="my_link",
+            citation=my_link,
             html_response=output["html_response"],  
             unanswer_query=True,
         )
@@ -782,7 +944,7 @@ def ask(
     # 
     # print(type(thread_id),type(data.org_id),type(output["title"]))
     update_chat_thread_description(
-        db, data.org_id, current_user.id, thread_id, description=output["title"]
+        db, current_user.org_id, current_user.id, thread_id, description=output["title"]
     )
     db.commit()
     output['html_response'].append({
@@ -790,10 +952,10 @@ def ask(
         "content":"Suggested Follow Up Questions"
     })
     output['html_response'].append(output['suggested_follow_ups'])
-    dept_id=docs_list[0].metadata.get("dept_id",None)
-    if dept_id is not None:
-        if dept_id=='global':
-            dept_id=0
+    # dept_id=docs_list[0].metadata.get("dept_id",None)
+    # if dept_id is not None:
+    #     if dept_id=='global':
+    #         dept_id=0
   
     # user_license_and_token_update(
     #     db=db,
@@ -819,7 +981,7 @@ def ask(
         "citations": output["citation"],
         "total_token": answer["total_token"],
      
-        "links": "my_link",
+        "links": my_link,
     }
     # return {"query_time":e-s,"response":output['response'],"html_response":output['html_response'],"citations":output['citation'],"total_token":answer['total_token'],"is_context_available":output['is_context_availale']}
     # return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list,"size":siz}
@@ -843,8 +1005,8 @@ def get_chat_history(
     current_user: UserModel = Depends(get_current_active_user),
 ):
     query = db.query(ChatMessage).filter(
-        ChatMessage.user_id == current_user.id,
-        ChatMessage.org_id == current_user.org_id,
+        # ChatMessage.user_id == current_user.id,
+        # ChatMessage.org_id == current_user.org_id,
         ChatMessage.thread_id == thread_id,
     )
 
@@ -915,7 +1077,7 @@ def ask_by_id(
     #         persist_dir=f"{BASE_DIR}/{data.org_id}/dept/{dept_id}",
     #     )
     #     rv = retriever.get_retreiver_by_document_id(
-    #         vector_store=vectorStore.get_vector_store(),
+    #         vector_store=vectorStore.get_vector_store(), 
     #         search_type="similarity",
     #         top_n=data.top_k,
     #         document_id=document_id,
@@ -923,7 +1085,7 @@ def ask_by_id(
     #     retrieval_list.append(rv)
     vectorStore = vectorManager.get_store(
             embeddings=embeddings,
-            persist_dir=f"{BASE_DIR}/{data.org_id}",
+            persist_dir=f"{BASE_DIR}/{current_user.org_id}",
         )
     rv = retriever.get_retreiver_by_document_id(
             vector_store=vectorStore.get_vector_store(),
