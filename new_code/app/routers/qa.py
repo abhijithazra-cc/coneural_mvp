@@ -126,59 +126,81 @@ class CitationItem(BaseModel):
     )
 
 
+# ─────────────────────────────────────────
+# HTML BLOCK MODEL (for frontend rendering)
+# ─────────────────────────────────────────
 class HtmlItem(BaseModel):
     tag: str = Field(
         ...,
         description=(
             "Semantic HTML tag chosen intentionally "
-            "(e.g., h1, h2, p, ul, li, table, tr, th, td, code, pre)"
+            "(h1, h2, p, ul, li, table, tr, th, td, code, pre)"
         ),
     )
+
     content: str = Field(
-        ..., description=("Content for this tag. " "Must match the purpose of the tag.")
+        ...,
+        description="Content for this tag. Must match the purpose of the tag.",
     )
 
+
+# ─────────────────────────────────────────
+# FOLLOW-UP QUESTIONS MODEL
+# ─────────────────────────────────────────
 class SuggestedFollowUpQuestions(BaseModel):
     """
     Always include exactly 3 short and relevant follow-up questions.
-    Questions must relate to the same topic or documents.
-    Do not assume information outside the provided context.
-    Do not include answers.
+    Must relate to same topic/documents.
+    Do NOT include answers.
     """
 
     tag: str = Field(
         default="ul",
-        description="HTML container tag (example: ul, ol, div)"
+        description="HTML container tag (example: ul, ol, div). Default = ul",
     )
-    content: str = Field(
+
+    # EXACTLY 3 questions as <li>...</li>
+    content: List[str] = Field(
         ...,
-        min_items=3,
-        max_items=3,
-        description="Exactly 3 list items rendered as <li>"
+        min_length=3,
+        max_length=3,
+        description="Exactly 3 strings, each like '<li>Question...</li>'",
     )
+
+
+# ─────────────────────────────────────────
+# FINAL RAG RESPONSE MODEL
+# ─────────────────────────────────────────
 class RAGResponse(BaseModel):
-    title: str = Field(..., description="Title on basis of only user query it doesn't depend on context")
+    title: str = Field(
+        ...,
+        description="Short title based ONLY on user query (not dependent on context)",
+    )
+
     html_response: List[HtmlItem] = Field(
         ...,
         description=(
-            "Frontend-ready UI blocks. "
-            "LLM must design semantic structure, not just convert text. "
-            "Choose tables, lists, headings where appropriate."
+            "Frontend-ready structured HTML blocks. "
+            "Use semantic tags properly (h1, h2, p, table, ul, li etc)."
         ),
     )
-    # response: str = Field(
-    #     ...,
-    #     description=(
-    #         "llm response of user query"
-    #     ),
-    # )
-    citation: List = Field(..., description="Files used for answering")
-    is_context_availale: Literal["True", "False"] = Field(
-        ..., description="Whether answer was generated from provided context"
+
+    # IMPORTANT: must be typed list (fixes your schema error)
+    citation: List[CitationItem] = Field(
+        default_factory=list,
+        description="List of files used for answering",
     )
-    suggested_follow_ups: SuggestedFollowUpQuestions = Field(..., description="ul tag must be there ,Three relevant follow-up questions")
 
+    is_context_availale: Literal["True", "False"] = Field(
+        ...,
+        description="Whether answer was generated from provided context",
+    )
 
+    suggested_follow_ups: SuggestedFollowUpQuestions = Field(
+        ...,
+        description="Must contain ul tag and exactly 3 follow-up questions",
+    )
+    usage_metadata: Dict[str, Any] = Field(..., description="Token usage and other metadata returned by LLM provider")
 import uuid
 
 
@@ -240,7 +262,7 @@ def chat_node(state: ChatState):
     # response = llm_openai.generate_answer_with_structure(
     #     context=context, query=messages, schema=RAGResponse
     #     )
-    # print(response)
+    print(response)
     total_token = response.usage_metadata["total_tokens"]
     return {"messages": [response], "total_token": total_token}
 
@@ -781,6 +803,26 @@ def parse_llm_like_json(text: str) -> dict:
     return json.loads(repaired)
 
 
+def format_followups(output: dict) -> str:
+    """
+    Convert suggested_follow_ups list into HTML <li> string.
+    Returns empty string if not present.
+    """
+
+    try:
+        followups = output.get("suggested_follow_ups", {}).get("content", [])
+
+        if not followups or not isinstance(followups, list):
+            return ""
+
+        # convert to <li> format
+        html_string = "".join([f"<li>{q}</li>" for q in followups if q])
+
+        return html_string
+
+    except Exception as e:
+        print("Followup format error:", e)
+        return ""
 
 
 
@@ -856,7 +898,7 @@ def ask(
     print("test time", time.monotonic() - s)
     rvm = EnsembleRetriever(retrievers=retrieval_list)
     docs_list = rvm.invoke(input=data.q)
- 
+    # print("docs_list", docs_list)
     print("context extracton time", time.monotonic() - s)
     
     ss = time.monotonic()
@@ -898,7 +940,7 @@ def ask(
 
     # res=answer['messages'][-1].content
     res=res.replace("```json","").replace("```","")
-    print("output after removing code fence",res)
+    # print("output after removing code fence",res)
     output=parse_llm_like_json(res)
     # output = json.loads(res)
     e = time.monotonic()
@@ -911,7 +953,7 @@ def ask(
     print("output citation",output['citation'])
     my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
     output['html_response']=unmask_html_list(output['html_response'])
-    print("unmasked html_response",output['html_response'])
+    # print("unmasked html_response",output['html_response'])
     print("time1", time.monotonic() - s1)
      
     llm_response = extract_text_only_from_html(output["html_response"])
@@ -951,6 +993,9 @@ def ask(
         "tag":"h1",
         "content":"Suggested Follow Up Questions"
     })
+    print(type(output['suggested_follow_ups']),output['suggested_follow_ups'])
+    # output['suggested_follow_ups']=format_followups(output["suggested_follow_ups"])
+    # print("formatted follow up",output['suggested_follow_ups'])
     output['html_response'].append(output['suggested_follow_ups'])
     # dept_id=docs_list[0].metadata.get("dept_id",None)
     # if dept_id is not None:
@@ -1095,6 +1140,8 @@ def ask_by_id(
         )
     # rvm = EnsembleRetriever(retrievers=[rv])
     docs_list = rv.invoke(input=data.q)
+    print("docs_list", docs_list)
+
 
     # print("docs_list", docs_list)
     with PyMySQLSaver.from_conn_string(
