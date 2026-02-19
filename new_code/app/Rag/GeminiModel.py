@@ -8,7 +8,7 @@ from langchain_core.runnables import RunnableLambda
 
 
 class GeminiFlashModel:
-    
+
     def __init__(self):
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-2.5-flash",
@@ -193,17 +193,15 @@ Assistant:
         self.prompt = PromptTemplate(
             template=f"{PROMPT_TEMPLATE}{{format_instruction}}",
             input_variables=["context", "query"],
-            partial_variables={
-                "format_instruction": parser.get_format_instructions()
-            },
+            partial_variables={"format_instruction": parser.get_format_instructions()},
         )
         return self.prompt
 
     def generate_answer_with_structure(self, context, query, schema: BaseModel):
-        # parser = PydanticOutputParser(pydantic_object=schema)
-        # chain = self.get_prompt_with_parser(parser) | self.get_llm()
-        structured_llm=self.get_llm().with_structured_output(schema,include_raw=True)
-        chain=self.get_prompt() | structured_llm
+        parser = PydanticOutputParser(pydantic_object=schema)
+        chain = self.get_prompt_with_parser(parser) | self.get_llm()
+        # structured_llm=self.get_llm().with_structured_output(schema,include_raw=True)
+        # chain=self.get_prompt() | structured_llm
         result = chain.invoke({"context": context, "query": query})
         self.model_response = result
         return result
