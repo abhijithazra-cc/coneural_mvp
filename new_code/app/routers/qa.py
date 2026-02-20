@@ -1039,7 +1039,7 @@ def ask(
     print(type(output["suggested_follow_ups"]), output["suggested_follow_ups"])
     # output['suggested_follow_ups']=format_followups(output["suggested_follow_ups"])
     # print("formatted follow up",output['suggested_follow_ups'])
-    output["html_response"].append(output["suggested_follow_ups"])
+    output["html_response"].append(output["suggested_follow_ups"][0])
     # dept_id=docs_list[0].metadata.get("dept_id",None)
     # if dept_id is not None:
     #     if dept_id=='global':
