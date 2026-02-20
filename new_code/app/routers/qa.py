@@ -607,6 +607,9 @@ def _check_user_access_to_document(
         raise HTTPException(status_code=403, detail="No access to this document")
 
 
+from urllib.request import urlopen
+
+
 @router.get("/pdf/{id}", summary="Get citated link by id")
 def cited(
     db: Session = Depends(get_db),
@@ -634,8 +637,12 @@ def cited(
                 db=db, current_user=current_user, document_id=doc_id
             )
             pdf_bytes = base64.b64decode(job.result["pdf"])
+
+            pdf_url = job.result["link"]
+            with urlopen(pdf_url) as response:
+                sudo_pdf_bytes = response.read()
         return StreamingResponse(
-            io.BytesIO(pdf_bytes),
+            io.BytesIO(sudo_pdf_bytes),
             media_type="application/pdf",
             headers={"Content-Disposition": f"inline"},
         )

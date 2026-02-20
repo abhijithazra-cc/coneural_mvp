@@ -356,19 +356,22 @@ def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
     obj = HighlightText()
     my_bytes = obj.highlight_text(my_bytes, chunks=chunks)
 
-    # response = upload_pdf_to_github(
-    #     file_name=filename,
-    #     owner="rahulkumarcollectcent",
-    #     token=os.getenv("GITHUB_TOKEN"),
-    #     folder="uploads",
-    #     repo="pdf-viewer",
-    #     pdf_bytes=my_bytes
-    # )
+    response = upload_pdf_to_github(
+        file_name=filename,
+        owner="rahulkumarcollectcent",
+        token=os.getenv("GITHUB_TOKEN"),
+        folder="uploads",
+        repo="pdf-viewer",
+        pdf_bytes=my_bytes
+    )
+    print(response)
 
     return {
         "filename": title,
         "pdf": base64.b64encode(my_bytes).decode("utf-8"),
-        "document_id": document_id
+        "document_id": document_id,
+        "link": response["link"]
+      
     }
   
 
