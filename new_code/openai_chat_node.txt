@@ -1,0 +1,275 @@
+messages:
+Human: what was my name
+AI: {
+  "title": "Your Name Inquiry",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "Not available in provided context. I do not have access to your name from the current conversation or documents."
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Can you tell me what information you have stored about users?</li><li>How is user privacy handled in this system?</li><li>Can I change or update my personal information here?</li>"
+    }
+  ]
+}
+Human: what was my name
+AI: {
+  "title": "Your Name Inquiry",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "Not available in provided context. I do not have access to your name from the current conversation or documents."
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Can you tell me what information you have stored about users?</li><li>Am I able to update my personal details here?</li><li>How is user data privacy managed in this system?</li>"
+    }
+  ]
+}
+Human: how are you
+AI: {
+  "title": "Feeling Inquiry",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "I'm just a digital assistant, but I'm here and ready to help you with whatever you need!"
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Can I help you with any specific questions today?</li><li>Is there a topic you'd like to discuss or learn about?</li><li>Would you like to hear an interesting fact?</li>"
+    }
+  ]
+}
+Human: hi I am abhishek 
+AI: {
+  "title": "Your Name Inquiry",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "Not available in provided context. I do not have access to your name from the current conversation or documents."
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Is there a specific way you would like me to remember your name for future responses?</li><li>Can you tell me how your personal data is managed here?</li><li>Would you like to know how to update or view your stored information?</li>"
+    }
+  ]
+}
+Human: what is pip
+AI: {
+  "title": "Definition of Pip in Forex",
+  "html_response": [
+    {
+      "tag": "h2",
+      "content": "What is a Pip in Forex?"
+    },
+    {
+      "tag": "p",
+      "content": "A pip (percentage in point) is the smallest standard unit of price movement in forex. For most currency pairs, one pip equals 0.0001 (one ten-thousandth) of the exchange rate. For pairs involving the Japanese yen (JPY) as the quote currency, one pip equals 0.01. For example, if EUR/USD moves from 1.1050 to 1.1051, that is a 1 pip increase. A movement from 110.50 to 110.51 in USD/JPY would likewise be 1 pip. Pips are the basic measure of profit or loss in forex trading (sources: 111_143_1771325074_Forex Trading Guide for AI Developers (1).pdf)."
+    }
+  ],
+  "citation": [
+    {
+      "file": "111_143_1771325074_Forex Trading Guide for AI Developers (1).pdf",
+      "document_id": "193"
+    }
+  ],
+  "is_context_availale": "True",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>How is the pip value calculated for different lot sizes?</li><li>What is the difference between a pip and a pipette?</li><li>Why are pip values different for JPY pairs compared to other pairs?</li>"
+    }
+  ]
+}
+Human: what is gold price of today
+AI: {
+  "title": "Today's Gold Price",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "Not available in provided context. The gold price for today is not mentioned in the current documents. Typical sources for up-to-date gold prices include financial news websites, commodity exchanges, or market data platforms."
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Where can I find reliable live gold price data?</li><li>How do gold prices affect forex trading strategies?</li><li>Is there historical gold price correlation data available in the documents?</li>"
+    }
+  ]
+}
+Human: what was my name
+AI: {
+  "title": "Your Name Inquiry",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "Not available in provided context. I do not have access to your name from the current conversation or documents."
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Is there a way for me to update or store my name here?</li><li>How does this system handle user identification?</li><li>Can I request details about my saved personal information?</li>"
+    }
+  ]
+}
+Human: who was me
+AI: {
+  "title": "Identity Inquiry",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "Not available in provided context. I do not have access to your identity or personal details from the current conversation or documents."
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Is there a way to save or update my identity in this system?</li><li>How does this platform handle user profiles or identification?</li><li>Can I get a summary of the personal information stored about me?</li>"
+    }
+  ]
+}
+Human: what are the currencies you mentioned erlier
+AI: {
+  "title": "Currencies Mentioned Earlier",
+  "html_response": [
+    {
+      "tag": "h2",
+      "content": "Major Currency Pairs Mentioned"
+    },
+    {
+      "tag": "ul",
+      "content": "<li>EUR/USD – Euro / U.S. Dollar</li><li>GBP/USD – British Pound / U.S. Dollar</li><li>USD/JPY – U.S. Dollar / Japanese Yen</li><li>USD/CHF – U.S. Dollar / Swiss Franc</li><li>AUD/USD – Australian Dollar / U.S. Dollar</li><li>USD/CAD – U.S. Dollar / Canadian Dollar</li><li>NZD/USD – New Zealand Dollar / U.S. Dollar</li>"
+    },
+    {
+      "tag": "p",
+      "content": "These are considered the major pairs in the forex market and are the most liquid and widely traded. Minor pairs (cross-currency pairs without USD, such as EUR/GBP or AUD/JPY) and exotic pairs (major currency paired with an emerging-market currency) are also described in the documents, but the above list contains the main currencies discussed (sources: 111_143_1771325074_Forex Trading Guide for AI Developers (1).pdf)."
+    }
+  ],
+  "citation": [
+    {
+      "file": "111_143_1771325074_Forex Trading Guide for AI Developers (1).pdf",
+      "document_id": "193"
+    }
+  ],
+  "is_context_availale": "True",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>What are the characteristics of minor and exotic currency pairs?</li><li>How do spreads and liquidity differ among these major pairs?</li><li>Which economic factors most affect these major currencies?</li>"
+    }
+  ]
+}
+Human: what are the currencies you mentioned previous coversation
+AI: {
+  "title": "Previously Mentioned Currencies",
+  "html_response": [
+    {
+      "tag": "h2",
+      "content": "Major Currency Pairs Mentioned in Previous Conversation"
+    },
+    {
+      "tag": "ul",
+      "content": "<li>EUR/USD – Euro / U.S. Dollar</li><li>GBP/USD – British Pound / U.S. Dollar</li><li>USD/JPY – U.S. Dollar / Japanese Yen</li><li>USD/CHF – U.S. Dollar / Swiss Franc</li><li>AUD/USD – Australian Dollar / U.S. Dollar</li><li>USD/CAD – U.S. Dollar / Canadian Dollar</li><li>NZD/USD – New Zealand Dollar / U.S. Dollar</li>"
+    },
+    {
+      "tag": "p",
+      "content": "These are the major forex currency pairs highlighted as liquid and widely traded. The documents also mention minor pairs (without USD, e.g., EUR/GBP) and exotic pairs (major paired with emerging-market currency), but the above list focuses on the main currencies previously discussed (sources: 111_143_1771325074_Forex Trading Guide for AI Developers (1).pdf)."
+    }
+  ],
+  "citation": [
+    {
+      "file": "111_143_1771325074_Forex Trading Guide for AI Developers (1).pdf",
+      "document_id": "193"
+    }
+  ],
+  "is_context_availale": "True",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>What are some examples of minor and exotic currency pairs mentioned in the documents?</li><li>How does market liquidity vary among these major currency pairs?</li><li>Which market sessions see the highest volume for these currency pairs?</li>"
+    }
+  ]
+}
+Human: what is pip
+AI: {
+  "title": "Definition of Pip in Forex",
+  "html_response": [
+    {
+      "tag": "h2",
+      "content": "What is a Pip in Forex?"
+    },
+    {
+      "tag": "p",
+      "content": "A pip (percentage in point) is the smallest standard unit of price movement in forex. For most currency pairs, one pip equals 0.0001 (one ten-thousandth) of the exchange rate. For pairs involving the Japanese yen (JPY) as the quote currency, one pip equals 0.01. For example, if EUR/USD moves from 1.1050 to 1.1051, that is a 1 pip increase. A movement from 110.50 to 110.51 in USD/JPY would likewise be 1 pip. Pips are the basic measure of profit or loss in forex trading (sources: 111_143_1771325074_Forex Trading Guide for AI Developers (1).pdf)."
+    }
+  ],
+  "citation": [
+    {
+      "file": "111_143_1771325074_Forex Trading Guide for AI Developers (1).pdf",
+      "document_id": "193"
+    }
+  ],
+  "is_context_availale": "True",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>How is the pip value calculated for different lot sizes?</li><li>What is the difference between a pip and a pipette?</li><li>Why are pip values different for JPY pairs compared to other pairs?</li>"
+    }
+  ]
+}
+Human: what  currencies you jus mentioned erlier coversation
+AI: {
+  "title": "Currencies Mentioned Earlier in Conversation",
+  "html_response": [
+    {
+      "tag": "h2",
+      "content": "Major Currency Pairs Mentioned"
+    },
+    {
+      "tag": "ul",
+      "content": "<li>EUR/USD – Euro / U.S. Dollar</li><li>GBP/USD – British Pound / U.S. Dollar</li><li>USD/JPY – U.S. Dollar / Japanese Yen</li><li>USD/CHF – U.S. Dollar / Swiss Franc</li><li>AUD/USD – Australian Dollar / U.S. Dollar</li><li>USD/CAD – U.S. Dollar / Canadian Dollar</li><li>NZD/USD – New Zealand Dollar / U.S. Dollar</li>"
+    },
+    {
+      "tag": "p",
+      "content": "These are the major forex currency pairs discussed as the most liquid and widely traded. The context also references minor pairs (cross-currency pairs that do not involve USD, such as EUR/GBP or AUD/JPY) and exotic pairs (which pair a major currency with an emerging-market currency), but the above are the primary currencies previously listed (sources: 111_143_1771325074_Forex Trading Guide for AI Developers (1).pdf)."
+    }
+  ],
+  "citation": [
+    {
+      "file": "111_143_1771325074_Forex Trading Guide for AI Developers (1).pdf",
+      "document_id": "193"
+    }
+  ],
+  "is_context_availale": "True",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Which minor and exotic currency pairs are described in the documents?</li><li>How do trading volumes vary across these major currency pairs?</li><li>What are the key economic factors influencing the value of these major currencies?</li>"
+    }
+  ]
+}
+Human: what  was my name i told you

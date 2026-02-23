@@ -162,14 +162,11 @@ def _get_doc_by_id(db,org_id,document_id):
 
 def filter_sources_by_citation(citations, org_id, sources):
     # keep only real file citations
-    cited_files = {
-        c.strip() for c in citations
-        
-    }
-
+    # cited_files = citations
+    cited_files = {c["file"] for c in citations}
     # filename → {document_id, chunks[]}
     grouped = {}
-
+    print("cited_files",cited_files)
     for src in sources:
         filename = src.get("metadata", {}).get("filename")
         if filename not in cited_files:

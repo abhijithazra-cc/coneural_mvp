@@ -200,10 +200,10 @@ Assistant:
         return self.prompt
 
     def generate_answer_with_structure(self, context, query, schema: BaseModel):
-        # parser = PydanticOutputParser(pydantic_object=schema)
-        # chain = self.get_prompt_with_parser(parser) | self.get_llm()
-        structured_llm=self.get_llm().with_structured_output(schema,include_raw=True)
-        chain=self.get_prompt() | structured_llm
+        parser = PydanticOutputParser(pydantic_object=schema)
+        chain = self.get_prompt_with_parser(parser) | self.get_llm()
+        # structured_llm=self.get_llm().with_structured_output(schema)
+        # chain=self.get_prompt() | structured_llm
         result = chain.invoke({"context": context, "query": query})
         self.model_response = result
         return result

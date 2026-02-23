@@ -1,0 +1,137 @@
+messages:
+Human: what was my name
+AI: {
+  "title": "Your Name Inquiry",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "Not available in provided context. I do not have access to your name from the current conversation or documents."
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Can you tell me what information you have stored about users?</li><li>How is user privacy handled in this system?</li><li>Can I change or update my personal information here?</li>"
+    }
+  ]
+}
+Human: what was my name
+AI: {
+  "title": "Your Name Inquiry",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "Not available in provided context. I do not have access to your name from the current conversation or documents."
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Can you tell me what information you have stored about users?</li><li>Am I able to update my personal details here?</li><li>How is user data privacy managed in this system?</li>"
+    }
+  ]
+}
+Human: how are you
+AI: {
+  "title": "Feeling Inquiry",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "I'm just a digital assistant, but I'm here and ready to help you with whatever you need!"
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Can I help you with any specific questions today?</li><li>Is there a topic you'd like to discuss or learn about?</li><li>Would you like to hear an interesting fact?</li>"
+    }
+  ]
+}
+Human: hi I am abhishek 
+AI: {
+  "title": "Your Name Inquiry",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "Not available in provided context. I do not have access to your name from the current conversation or documents."
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Is there a specific way you would like me to remember your name for future responses?</li><li>Can you tell me how your personal data is managed here?</li><li>Would you like to know how to update or view your stored information?</li>"
+    }
+  ]
+}
+Human: what is pip
+AI: {
+  "title": "Definition of Pip in Forex",
+  "html_response": [
+    {
+      "tag": "h2",
+      "content": "What is a Pip in Forex?"
+    },
+    {
+      "tag": "p",
+      "content": "A pip (percentage in point) is the smallest standard unit of price movement in forex. For most currency pairs, one pip equals 0.0001 (one ten-thousandth) of the exchange rate. For pairs involving the Japanese yen (JPY) as the quote currency, one pip equals 0.01. For example, if EUR/USD moves from 1.1050 to 1.1051, that is a 1 pip increase. A movement from 110.50 to 110.51 in USD/JPY would likewise be 1 pip. Pips are the basic measure of profit or loss in forex trading (sources: 111_143_1771325074_Forex Trading Guide for AI Developers (1).pdf)."
+    }
+  ],
+  "citation": [
+    {
+      "file": "111_143_1771325074_Forex Trading Guide for AI Developers (1).pdf",
+      "document_id": "193"
+    }
+  ],
+  "is_context_availale": "True",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>How is the pip value calculated for different lot sizes?</li><li>What is the difference between a pip and a pipette?</li><li>Why are pip values different for JPY pairs compared to other pairs?</li>"
+    }
+  ]
+}
+Human: what is gold price of today
+AI: {
+  "title": "Today's Gold Price",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "Not available in provided context. The gold price for today is not mentioned in the current documents. Typical sources for up-to-date gold prices include financial news websites, commodity exchanges, or market data platforms."
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Where can I find reliable live gold price data?</li><li>How do gold prices affect forex trading strategies?</li><li>Is there historical gold price correlation data available in the documents?</li>"
+    }
+  ]
+}
+Human: what was my name
+AI: {
+  "title": "Your Name Inquiry",
+  "html_response": [
+    {
+      "tag": "p",
+      "content": "Not available in provided context. I do not have access to your name from the current conversation or documents."
+    }
+  ],
+  "citation": [],
+  "is_context_availale": "False",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>Is there a way for me to update or store my name here?</li><li>How does this system handle user identification?</li><li>Can I request details about my saved personal information?</li>"
+    }
+  ]
+}
+Human: who was me

@@ -149,22 +149,20 @@ class HtmlItem(BaseModel):
 # ─────────────────────────────────────────
 class SuggestedFollowUpQuestions(BaseModel):
     """
-    Always include exactly 3 short and relevant follow-up questions.
-    Must relate to same topic/documents.
+    Always include relevant follow-up questions.
+    Must relate to based on query ,response and document mix.
     Do NOT include answers.
     """
 
-    tag: str = Field(
-        default="ul",
-        description="HTML container tag (example: ul, ol, div). Default = ul",
+    tag:  Literal["ul"] = Field(
+        
+        description="HTML container ul",
     )
 
-    # EXACTLY 3 questions as <li>...</li>
-    content: List[str] = Field(
+    content: str = Field(
         ...,
-        min_length=3,
-        max_length=3,
-        description="Exactly 3 strings, each like '<li>Question...</li>'",
+        
+        description="content like '<li>Question...</li>'   Return ONE <ul> block containing multiple <li> items.Do not create multiple ul tags.",
     )
 
 
@@ -196,11 +194,14 @@ class RAGResponse(BaseModel):
         description="Whether answer was generated from provided context",
     )
 
-    suggested_follow_ups: SuggestedFollowUpQuestions = Field(
+    suggested_follow_ups: list[SuggestedFollowUpQuestions] = Field(
         ...,
-        description="Must contain ul tag and exactly 3 follow-up questions",
+        default_factory=list,
+        min_length=3,
+        max_length=3,
+        description="Must contain ONE ul tag with exactly 3 li questions",
     )
-    usage_metadata: Dict[str, Any] = Field(..., description="Token usage and other metadata returned by LLM provider")
+
 import uuid
 
 
@@ -234,10 +235,14 @@ class ChatState(TypedDict):
 
 
 def chat_node(state: ChatState):
-    messages = state["messages"][-1]
+    messages = state["messages"]
+    # print("chat_node", messages)
+
+           
+  #      f.write(f"messages: {messages}\n")
     context = state["context"]
     provider=state.get("provider",None)
-
+    # print("chat_node",messages,context,provider)
 
     
 
@@ -262,8 +267,19 @@ def chat_node(state: ChatState):
     # response = llm_openai.generate_answer_with_structure(
     #     context=context, query=messages, schema=RAGResponse
     #     )
-    print(response)
+    # parsed_response=response['raw']
+    # print("response",response)
+    # print(parsed_response)
+    # print("updated chatnode",messages)
+    with open(f"{provider}_chat_node.txt", "w") as f: 
+       f.write("messages:\n")
+       for msg in messages:
+           if isinstance(msg, HumanMessage):
+               f.write(f"Human: {msg.content}\n")
+           elif isinstance(msg, AIMessage):
+               f.write(f"AI: {msg.content}\n")
     total_token = response.usage_metadata["total_tokens"]
+    # print("total_token",total_token)
     return {"messages": [response], "total_token": total_token}
 
 
@@ -950,7 +966,7 @@ def ask(
 
     # s1=time.monotonic()
     serialize_doc_list = documents_to_dicts(docs_list)
-    print("output citation",output['citation'])
+    # print("output citation",output['citation'])
     my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
     output['html_response']=unmask_html_list(output['html_response'])
     # print("unmasked html_response",output['html_response'])
@@ -958,6 +974,22 @@ def ask(
      
     llm_response = extract_text_only_from_html(output["html_response"])
     # print(type(llm_response),llm_response)
+
+    # 
+    # print(type(thread_id),type(data.org_id),type(output["title"]))
+    update_chat_thread_description(
+        db, current_user.org_id, current_user.id, thread_id, description=output["title"]
+    )
+    
+    output['html_response'].append({
+        "tag":"h1",
+        "content":"Suggested Follow Up Questions"
+    })
+    # print(type(output['suggested_follow_ups']),output['suggested_follow_ups'])
+    # output['suggested_follow_ups']=format_followups(output["suggested_follow_ups"])
+    # print("formatted follow up",output['suggested_follow_ups'])
+    output['html_response'].append(output['suggested_follow_ups'][0])
+    print("final html_response",output['html_response'])
     if output["is_context_availale"] == "True":
 
         chat_message = ChatMessage(
@@ -982,21 +1014,7 @@ def ask(
             unanswer_query=True,
         )
     db.add(chat_message)
-
-    # 
-    # print(type(thread_id),type(data.org_id),type(output["title"]))
-    update_chat_thread_description(
-        db, current_user.org_id, current_user.id, thread_id, description=output["title"]
-    )
     db.commit()
-    output['html_response'].append({
-        "tag":"h1",
-        "content":"Suggested Follow Up Questions"
-    })
-    print(type(output['suggested_follow_ups']),output['suggested_follow_ups'])
-    # output['suggested_follow_ups']=format_followups(output["suggested_follow_ups"])
-    # print("formatted follow up",output['suggested_follow_ups'])
-    output['html_response'].append(output['suggested_follow_ups'])
     # dept_id=docs_list[0].metadata.get("dept_id",None)
     # if dept_id is not None:
     #     if dept_id=='global':

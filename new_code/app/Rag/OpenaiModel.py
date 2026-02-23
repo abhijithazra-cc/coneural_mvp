@@ -82,7 +82,7 @@ Assistant:
       def generate_answer_with_structure(self,context,query,schema:BaseModel):
             # parser=PydanticOutputParser(pydantic_object=schema)
             # chain=self.get_prompt_with_parser(parser=parser) | self.get_llm()
-            structured_llm=self.get_llm().with_structured_output(schema,include_raw=True)
+            structured_llm=self.get_llm().with_structured_output(schema)
             chain=self.get_prompt() | structured_llm
             # chain=self.get_prompt() | self.get_llm()
 
@@ -227,9 +227,11 @@ Assistant:"""
             return self.prompt
       
       def generate_answer_with_structure(self,context,query,schema:BaseModel):
-            # parser=PydanticOutputParser(pydantic_object=schema)
-            # chain=self.get_prompt_with_parser(parser=parser) | self.get_llm()
-            chain=self.get_prompt() | self.get_llm().with_structured_output(schema)
+            parser=PydanticOutputParser(pydantic_object=schema)
+            chain=self.get_prompt_with_parser(parser=parser) | self.get_llm()
+            # self.llm.with_structured_output
+            # structured_llm=self.get_llm().with_structured_output(schema=schema,method="json_schema",include_raw=True)
+            # chain=self.get_prompt() | structured_llm
             # chain=self.get_prompt() | self.get_llm()
 
             result=chain.invoke({"context":context,"query":query})
