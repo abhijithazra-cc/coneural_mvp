@@ -22,7 +22,7 @@ class CsvLoader(Idocloader):
 
                     for _, row in df.iterrows():
                         text = row.to_json()
-                        docs.append(Document(page_content=text, metadata={"row_index": int(_)}))
+                        docs.append(Document(page_content=text, metadata={"row_index": int(_),"filename":filename}))
                     self.documents=docs
                     return docs
 
@@ -33,7 +33,7 @@ class CsvLoader(Idocloader):
 
                     for _, row in df.iterrows():
                         text = row.to_json()
-                        docs.append(Document(page_content=text, metadata={"row_index": int(_)}))
+                        docs.append(Document(page_content=text, metadata={"row_index": int(_),"filename":filename}))
                     self.documents=docs
                     return docs
 

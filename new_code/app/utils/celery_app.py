@@ -3,6 +3,11 @@ from celery import Celery
 # # # app/routers/qa.py
 
 from app.models.doc_models import OrgDocument,DocChunk  
+# celery_app = Celery(
+#     "tasks",
+#     broker="redis://172.22.94.123:6379/0",
+#     backend="redis://172.22.94.123:6379/0",
+# )
 celery_app = Celery(
     "tasks",
     broker="redis://localhost:6379/0",
@@ -162,11 +167,14 @@ def _get_doc_by_id(db,org_id,document_id):
 
 def filter_sources_by_citation(citations, org_id, sources):
     # keep only real file citations
-    # cited_files = citations
-    cited_files = {c["file"] for c in citations}
+    cited_files = {
+        c.strip() for c in citations
+        
+    }
+
     # filename → {document_id, chunks[]}
     grouped = {}
-    print("cited_files",cited_files)
+
     for src in sources:
         filename = src.get("metadata", {}).get("filename")
         if filename not in cited_files:
@@ -353,19 +361,22 @@ def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
     obj = HighlightText()
     my_bytes = obj.highlight_text(my_bytes, chunks=chunks)
 
-    # response = upload_pdf_to_github(
-    #     file_name=filename,
-    #     owner="rahulkumarcollectcent",
-    #     token=os.getenv("GITHUB_TOKEN"),
-    #     folder="uploads",
-    #     repo="pdf-viewer",
-    #     pdf_bytes=my_bytes
-    # )
+    response = upload_pdf_to_github(
+        file_name=filename,
+        owner="rahulkumarcollectcent",
+        token=os.getenv("GITHUB_TOKEN"),
+        folder="uploads",
+        repo="pdf-viewer",
+        pdf_bytes=my_bytes
+    )
+    print(response)
 
     return {
         "filename": title,
         "pdf": base64.b64encode(my_bytes).decode("utf-8"),
-        "document_id": document_id
+        "document_id": document_id,
+        "link": response["link"]
+      
     }
   
 
@@ -651,7 +662,7 @@ MAX_FILE_BYTES = 5 * 1024 * 1024
 # =========================
 # TASK 1: Extract + Store
 # =========================
-
+from app.Rag.DocumentConverter import DocumentConverter
 @celery_app.task(
     autoretry_for=(Exception,),
     retry_backoff=10,
@@ -690,7 +701,8 @@ def extract_and_store_doc_task(
             new_text=text.lower(),
             threshold=0.8,
         )
-
+        # doc_converter=DocumentConverter()
+        # payload=doc_converter.convert_to_pdf_bytes(file_bytes=payload,filename=original_filename)
         compdoc = CompareDoc()
         doc_hash = pickle.dumps(compdoc.create_minhash(text))
 

@@ -313,6 +313,22 @@ def _ensure_can_manage_global_docs(db: Session, current: UserModel, org_id: int)
 
 MAX_FILE_BYTES = 5 * 1024 * 1024  # example, keep your existing
 
+from app.Rag.DocumentConverter import DocumentConverter
+converter = DocumentConverter()
+
+from fastapi import Response
+@router.post("/convert")
+async def convert(file: UploadFile):
+    file_bytes = await file.read()
+    pdf_bytes = converter.convert_to_pdf_bytes(file_bytes, file.filename)
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={file.filename}.pdf"
+        },
+    )
 
 @router.post(
     "/",
@@ -359,7 +375,7 @@ async def upload_doc(
         if not dept_row:
             raise HTTPException(status_code=404, detail="Department not found in this organization")
 
-        _ensure_can_manage_dept_docs(db, current, org_id, dept_id_final)
+        _ensure_can_manage_dept_docs(db, current, current.org_id, dept_id_final)
         doc_scope = "department"
 
     # ---- schedule tasks ----
