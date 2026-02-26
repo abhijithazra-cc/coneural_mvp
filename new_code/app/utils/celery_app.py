@@ -1,8 +1,11 @@
 import os
+from pathlib import Path
 from celery import Celery
+
 # # # app/routers/qa.py
 
-from app.models.doc_models import OrgDocument,DocChunk  
+from app.models.doc_models import OrgDocument, DocChunk
+
 # celery_app = Celery(
 #     "tasks",
 #     broker="redis://172.22.94.123:6379/0",
@@ -24,9 +27,11 @@ celery_app.conf.update(
     task_soft_time_limit=270,
 )
 from app.Rag.HighlightText import HighlightText
+
 # from app.database import SessionLocal
 # import base64
 from app.Rag.PdfUploader import upload_pdf_to_github
+
 # celery_app = Celery(
 #     "tasks",
 #     broker="redis://localhost:6379/0",
@@ -34,12 +39,15 @@ from app.Rag.PdfUploader import upload_pdf_to_github
 # )
 # # # celery_app.autodiscover_tasks(["app.tasks"])
 
-def _get_doc_by_id(db,org_id,document_id):
-     
-     docs=db.query(OrgDocument).filter(OrgDocument.org_id==org_id,OrgDocument.id==document_id)
-     for u in docs:
-          print("type u",type(u.file_bytes))
-          return u.file_bytes ,u.title
+
+def _get_doc_by_id(db, org_id, document_id):
+
+    docs = db.query(OrgDocument).filter(
+        OrgDocument.org_id == org_id, OrgDocument.id == document_id
+    )
+    for u in docs:
+        print("type u", type(u.file_bytes))
+        return u.file_bytes, u.title
 
 
 # # @celery_app.task
@@ -49,10 +57,9 @@ def _get_doc_by_id(db,org_id,document_id):
 # #     return x * 2
 
 
-
 # # # @celery_app.task
 # # # def helper_filter_sources_by_citation(cited_files,org_id, src):
-    
+
 # # #         # print(src.metadata['filename'].lower())
 # # #         db = SessionLocal()
 # # #         filename = src['metadata'].get('filename')
@@ -73,8 +80,6 @@ def _get_doc_by_id(db,org_id,document_id):
 # # #             print(response)
 # # #             return {"filename":title,"link":response['link'],"document_id":document_id}
 # # #         return None
- 
-
 
 
 # @celery_app.task
@@ -93,7 +98,7 @@ def _get_doc_by_id(db,org_id,document_id):
 #     # 2. Filter sources matching the cited filenames
 #     for src in sources:
 #         # print(src.metadata['filename'].lower())
-        
+
 #         filename = src['metadata'].get('filename')
 
 
@@ -115,14 +120,14 @@ def _get_doc_by_id(db,org_id,document_id):
 
 #     output=[]
 #     for document_id,items in result.items():
-            
+
 #             my_doc_bytes,title=_get_doc_by_id(db=db,org_id=org_id,document_id=document_id)
 #             print("doc_id",document_id,"my_doc_bytes type",type(my_doc_bytes))
 #             # docs=_get_doc_by_id(db,current_user,document_id)
 #             # full_doc=""
 #             # for doc in docs:
 #             #      print("doc",doc)
-                 
+
 #             #      full_doc+=doc
 #             #full_doc=''.join(docs.page_content)
 #             # print("my docs",docs)
@@ -138,14 +143,13 @@ def _get_doc_by_id(db,org_id,document_id):
 #             # my_bytes=base64.b64encode(my_bytes).decode()
 #             response=upload_pdf_to_github(file_name=items['filename'],owner="rahulkumarcollectcent",token="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",folder='uploads',repo='pdf-viewer',pdf_bytes=my_bytes)
 #             # print(response)
-            
+
 #             result[document_id]['link']=response['link']
 #             # print("github token",response['github_token'])
 #             output.append({"filename":title,"link":result[document_id]['link'],"document_id":document_id})
 #             # print(my_bytes)
 #     # print("result",result)
 #     return output
-
 
 
 # # # def filter_sources_by_citation(citations,org_id, sources):
@@ -158,19 +162,15 @@ def _get_doc_by_id(db,org_id,document_id):
 # # #     # 2. Filter sources matching the cited filenames
 # # #     for src in sources:
 # # #         # print(src.metadata['filename'].lower())
-        
+
 # # #         filtered_result = helper_filter_sources_by_citation.delay(cited_files,org_id, src)
 # # #         output.append(filtered_result.id)
-# # #     return output   
-
+# # #     return output
 
 
 def filter_sources_by_citation(citations, org_id, sources):
     # keep only real file citations
-    cited_files = {
-        c.strip() for c in citations
-        
-    }
+    cited_files = {c.strip() for c in citations}
 
     # filename → {document_id, chunks[]}
     grouped = {}
@@ -184,10 +184,7 @@ def filter_sources_by_citation(citations, org_id, sources):
         chunk = src["page_content"]
 
         if filename not in grouped:
-            grouped[filename] = {
-                "document_id": document_id,
-                "chunks": []
-            }
+            grouped[filename] = {"document_id": document_id, "chunks": []}
 
         grouped[filename]["chunks"].append(chunk)
 
@@ -195,14 +192,13 @@ def filter_sources_by_citation(citations, org_id, sources):
 
     for filename, data in grouped.items():
         task = helper_filter_sources_by_citation.delay(
-            filename,
-            org_id,
-            data["document_id"],
-            data["chunks"]
+            filename, org_id, data["document_id"], data["chunks"]
         )
         output.append({"filename": filename, "link": f"/qa/pdf/{task.id}"})
 
     return output
+
+
 # import time
 # from app.Rag.CompareDoc import CompareDoc
 # from app.services.document import _ensure_org_admin,_ensure_org_admin_or_dept_admin_or_author,_ensure_can_manage_global_docs,_ensure_can_manage_dept_docs,_ensure_same_org,_check_duplicate
@@ -222,7 +218,7 @@ def filter_sources_by_citation(citations, org_id, sources):
 
 # # @celery_app.task
 # # def upload_file_to_db_task(
-    
+
 # #     payload: None,
 # #     original_filename: str,
 # #     content_type: str,
@@ -350,11 +346,7 @@ def filter_sources_by_citation(citations, org_id, sources):
 def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
     db = SessionLocal()
     # time.sleep(20)  # Simulate a delay for heavy processing
-    my_doc_bytes, title = _get_doc_by_id(
-        db=db,
-        org_id=org_id,
-        document_id=document_id
-    )
+    my_doc_bytes, title = _get_doc_by_id(db=db, org_id=org_id, document_id=document_id)
 
     my_bytes = base64.b64decode(my_doc_bytes)
 
@@ -367,7 +359,7 @@ def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
         token=os.getenv("GITHUB_TOKEN"),
         folder="uploads",
         repo="pdf-viewer",
-        pdf_bytes=my_bytes
+        pdf_bytes=my_bytes,
     )
     print(response)
 
@@ -375,14 +367,8 @@ def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
         "filename": title,
         "pdf": base64.b64encode(my_bytes).decode("utf-8"),
         "document_id": document_id,
-        "link": response["link"]
-      
+        "link": response["link"],
     }
-  
-
-
-
-
 
 
 # import time
@@ -441,13 +427,13 @@ def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
 # # =========================
 
 # @celery_app.task(
-    
+
 #     autoretry_for=(Exception,),
 #     retry_backoff=10,
 #     retry_kwargs={"max_retries": 3},
 # )
 # def extract_and_store_doc_task(
-    
+
 #     payload: bytes,
 #     original_filename: str,
 #     content_type: str,
@@ -622,21 +608,12 @@ def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
 #     ).apply_async()
 
 
-
-
-
-
-
-
-
-
 import time
 import base64
 import pickle
 import traceback
 from celery import Celery, chain
 from sqlalchemy.orm import Session
-
 
 
 from app.database import SessionLocal
@@ -663,6 +640,8 @@ MAX_FILE_BYTES = 5 * 1024 * 1024
 # TASK 1: Extract + Store
 # =========================
 from app.Rag.DocumentConverter import DocumentConverter
+
+
 @celery_app.task(
     autoretry_for=(Exception,),
     retry_backoff=10,
@@ -701,8 +680,13 @@ def extract_and_store_doc_task(
             new_text=text.lower(),
             threshold=0.8,
         )
-        # doc_converter=DocumentConverter()
-        # payload=doc_converter.convert_to_pdf_bytes(file_bytes=payload,filename=original_filename)
+        doc_converter = DocumentConverter()
+        # filename_without_ext = Path(original_filename).stem
+        file_ext = Path(original_filename).suffix
+        if file_ext != ".pdf":
+            payload = doc_converter.convert_to_pdf_bytes(
+                file_bytes=payload, filename=original_filename
+            )
         compdoc = CompareDoc()
         doc_hash = pickle.dumps(compdoc.create_minhash(text))
 
@@ -713,7 +697,7 @@ def extract_and_store_doc_task(
             title=original_filename,
             tag=tag,
             scope=doc_scope,
-            filename=filename,
+            filename=original_filename,
             mime_type=content_type or "application/octet-stream",
             size_bytes=len(payload),
             file_bytes=base64.b64encode(payload),
@@ -749,9 +733,11 @@ def extract_and_store_doc_task(
     finally:
         db.close()
 
+
 # =========================
 # TASK 2: Chunk + Store
 # =========================
+
 
 @celery_app.task
 def chunk_and_store_task(payload: dict):
@@ -788,7 +774,9 @@ def chunk_and_store_task(payload: dict):
 
         return {
             "doc_id": payload["doc_id"],
-            "chunks": [{"page_content": c.page_content, "metadata": c.metadata} for c in chunks],  # ✅ strings only
+            "chunks": [
+                {"page_content": c.page_content, "metadata": c.metadata} for c in chunks
+            ],  # ✅ strings only
             "user_id": payload["user_id"],
             "org_id": payload["org_id"],
             "dept_id": payload["dept_id"],
@@ -798,9 +786,11 @@ def chunk_and_store_task(payload: dict):
     finally:
         db.close()
 
+
 # =========================
 # TASK 3: Embed + FAISS
 # =========================
+
 
 @celery_app.task(time_limit=180)
 def embed_and_index_task(payload: dict):
@@ -810,45 +800,40 @@ def embed_and_index_task(payload: dict):
             embeddings=embeddings,
             persist_dir=f"{BASE_DIR}/{payload['org_id']}",
         )
-        print("payload in embed_and_index_task",payload)
-        documents=[
-                Document(
-                
-                    page_content=chunk["page_content"],
-                    metadata=chunk["metadata"]
-                )
-                for chunk in payload["chunks"]
-            ]
+        print("payload in embed_and_index_task", payload)
+        documents = [
+            Document(page_content=chunk["page_content"], metadata=chunk["metadata"])
+            for chunk in payload["chunks"]
+        ]
         # print("dept_id",payload["dept_id"],"scope",payload["scope"])
         if payload["scope"] == "department":
-            dept_id=payload["dept_id"]
+            dept_id = payload["dept_id"]
         else:
-            dept_id="global"
-        
+            dept_id = "global"
+
         vs.add_documents(
             documents=documents,
             document_id=payload["doc_id"],
-            dept_id= dept_id,
+            dept_id=dept_id,
         )
 
         token_count = sum(
             _count_tokens_for_openai_embeddings(
                 model_name="text-embedding-ada-002",
-                texts=[ chunk["page_content"]  ],
+                texts=[chunk["page_content"]],
             )
             for chunk in payload["chunks"]
         )
         user_license_and_token_update(
-                db,
-                payload["user_id"],
-            
-                token_count,
-            )
+            db,
+            payload["user_id"],
+            token_count,
+        )
         org_license_and_token_update(
-                db,
-                payload["org_id"],
-                token_count,
-            )
+            db,
+            payload["org_id"],
+            token_count,
+        )
         # if payload["dept_id"] and payload["scope"] == "department":
         #     user_license_and_token_update(
         #         db,
@@ -881,9 +866,11 @@ def embed_and_index_task(payload: dict):
     finally:
         db.close()
 
+
 # =========================
 # PIPELINE ENTRY POINT
 # =========================
+
 
 @celery_app.task
 def upload_file_to_db_task(

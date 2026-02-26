@@ -391,10 +391,10 @@ async def upload_doc(
                 status_code=413,
                 detail=f"File too large: {file.filename}. Max size is {MAX_FILE_BYTES} bytes.",
             )
-
+        filename=file.filename.replace(" ", "_")
         task = upload_file_to_db_task.delay(
             payload=payload,
-            original_filename=file.filename,
+            original_filename=filename,
             content_type=file.content_type,
             org_id=current.org_id,
             dept_id=dept_id_final,   # None for global

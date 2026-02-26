@@ -162,7 +162,7 @@ class RAGResponse(BaseModel):
         ),
     )
 
-    citation: List = Field(..., description="Files used for answering")
+    citation: List = Field(..., description="return filename only which is present in metadata of documents for cited sources otherwise return empty list")
 
     is_context_availale: Literal["True", "False"] = Field(
         ...,
@@ -224,18 +224,26 @@ def chat_node(state: ChatState):
     return {"messages": [response], "total_token": total_token}
 
 
+# Don't compile yet - we'll compile with checkpointer in the functions
 builder = (
     StateGraph(ChatState)
     .add_node("chat_node", chat_node)
     .add_edge(START, "chat_node")
     .add_edge("chat_node", END)
-    .compile()
 )
 
-with PyMySQLSaver.from_conn_string(
-    conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
-) as cp:
-    cp.setup()
+# Initialize checkpointer
+def get_checkpointer():
+    return PyMySQLSaver.from_conn_string(
+        conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
+    )
+
+# Setup checkpointer
+try:
+    with get_checkpointer() as cp:
+        cp.setup()
+except:
+    pass  # Checkpointer might already be set up
 
 
 def _get_thread_provider(db: Session, current_user, thread_id: int) -> str:
@@ -662,13 +670,25 @@ def _invoke_chatbot_with_fallback(
     )
 
 
-def unmask_html_list(html_list: list) -> list:
-    state = PiiMaskingState()
+def unmask_html_list(html_list: list, state: PiiMaskingState) -> list:
     masking = Masking()
     for item in html_list:
         if isinstance(item, dict) and "content" in item:
             item["content"] = masking.unmask_text(item["content"], state=state)
+        elif isinstance(item, list):
+            # handle nested lists like suggested_follow_ups
+            for nested in item:
+                if isinstance(nested, dict) and "content" in nested:
+                    nested["content"] = masking.unmask_text(nested["content"], state=state)
     return html_list
+
+# def unmask_html_list(html_list: list) -> list:
+#     state = PiiMaskingState()
+#     masking = Masking()
+#     for item in html_list:
+#         if isinstance(item, dict) and "content" in item:
+#             item["content"] = masking.unmask_text(item["content"], state=state)
+#     return html_list
 
 
 def safe_json_from_llm(text: str):
@@ -858,10 +878,8 @@ def ask(
     print("masking time", time.monotonic() - ss)
 
     s1 = time.monotonic()
-    with PyMySQLSaver.from_conn_string(
-        conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
-    ) as checkpointer:
-        chatbot = builder(checkpointer=checkpointer)
+    with get_checkpointer() as checkpointer:
+        chatbot = builder.compile(checkpointer=checkpointer)
         print(type(thread_id), thread_id)
         config = {"configurable": {"thread_id": thread_id}}
         provider = _get_thread_provider(db, current_user, thread_id)
@@ -888,7 +906,7 @@ def ask(
         org_id=current_user.org_id,
         sources=serialize_doc_list,
     )
-    output["html_response"] = unmask_html_list(output["html_response"])
+    output["html_response"] = unmask_html_list(output["html_response"],state=masking_state)
     print("time1", time.monotonic() - s1)
 
     llm_response = extract_text_only_from_html(output["html_response"])
@@ -1025,10 +1043,8 @@ def ask_by_id(
     docs_list = rv.invoke(input=data.q)
     print("docs_list", docs_list)
 
-    with PyMySQLSaver.from_conn_string(
-        conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
-    ) as checkpointer:
-        chatbot = builder(checkpointer=checkpointer)
+    with get_checkpointer() as checkpointer:
+        chatbot = builder.compile(checkpointer=checkpointer)
         config = {"configurable": {"thread_id": thread_id}}
 
         answer = chatbot.invoke(
