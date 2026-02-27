@@ -27,6 +27,7 @@ from app.models.doc_models import OrgDocument, DocChunk
 from app.utils.embeddings import embed_texts
 from app.models.chat_thread_model import ChatThreads
 from fastapi.responses import StreamingResponse
+from langchain_community.retrievers import BM25Retriever
 
 # from app.utils.faiss_manager import FaissManager
 from app.Rag.utils import embeddings, llm_openai,llm_gemini, BASE_DIR, retriever
@@ -119,6 +120,67 @@ def list_user_threads(
     return [_access_public(r) for r in rows]
 
 
+# class CitationItem(BaseModel):
+#     file: str = Field(..., description="Name of the PDF or source file used")
+#     document_id: str = Field(
+#         ..., description="Document id present in metadata with name document_id"
+#     )
+
+
+# class HtmlItem(BaseModel):
+#     tag: str = Field(
+#         ...,
+#         description=(
+#             "Semantic HTML tag chosen intentionally "
+#             "(e.g., h1, h2, p, ul, li, table, tr, th, td, code, pre)"
+#         ),
+#     )
+#     content: str = Field(
+#         ..., description=("Content for this tag. " "Must match the purpose of the tag.")
+#     )
+
+# class SuggestedFollowUpQuestions(BaseModel):
+#     """
+#     Always include exactly 3 short and relevant follow-up questions.
+#     Questions must relate to the same topic or documents.
+#     Do not assume information outside the provided context.
+#     Do not include answers.
+#     """
+
+#     tag: str = Field(
+#         default="ul",
+#         description="HTML container tag (example: ul, ol, div)"
+#     )
+#     content: str = Field(
+#         ...,
+#         min_items=3,
+#         max_items=3,
+#         description="Exactly 3 list items rendered as <li>"
+#     )
+# class RAGResponse(BaseModel):
+#     title: str = Field(..., description="Title on basis of only user query it doesn't depend on context")
+#     html_response: List[HtmlItem] = Field(
+#         ...,
+#         description=(
+#             "Frontend-ready UI blocks. "
+#             "LLM must design semantic structure, not just convert text. "
+#             "Choose tables, lists, headings where appropriate."
+#         ),
+#     )
+#     # response: str = Field(
+#     #     ...,
+#     #     description=(
+#     #         "llm response of user query"
+#     #     ),
+#     # )
+#     citation: List = Field(..., description="Files used for answering")
+#     is_context_availale: Literal["True", "False"] = Field(
+#         ..., description="Whether answer was generated from provided context"
+#     )
+#     suggested_follow_ups: SuggestedFollowUpQuestions = Field(..., description="ul tag must be there ,Three relevant follow-up questions")
+
+
+
 class CitationItem(BaseModel):
     file: str = Field(..., description="Name of the PDF or source file used")
     document_id: str = Field(
@@ -126,57 +188,82 @@ class CitationItem(BaseModel):
     )
 
 
+# ─────────────────────────────────────────
+# HTML BLOCK MODEL (for frontend rendering)
+# ─────────────────────────────────────────
 class HtmlItem(BaseModel):
     tag: str = Field(
         ...,
         description=(
             "Semantic HTML tag chosen intentionally "
-            "(e.g., h1, h2, p, ul, li, table, tr, th, td, code, pre)"
+            "(h1, h2, p, ul, li, table, tr, th, td, code, pre)"
         ),
     )
-    content: str = Field(
-        ..., description=("Content for this tag. " "Must match the purpose of the tag.")
-    )
 
-class SuggestedFollowUpQuestions(BaseModel):
-    """
-    Always include exactly 3 short and relevant follow-up questions.
-    Questions must relate to the same topic or documents.
-    Do not assume information outside the provided context.
-    Do not include answers.
-    """
-
-    tag: str = Field(
-        default="ul",
-        description="HTML container tag (example: ul, ol, div)"
-    )
     content: str = Field(
         ...,
-        min_items=3,
-        max_items=3,
-        description="Exactly 3 list items rendered as <li>"
+        description="Content for this tag. Must match the purpose of the tag.",
     )
+
+
+# ─────────────────────────────────────────
+# FOLLOW-UP QUESTIONS MODEL
+# ─────────────────────────────────────────
+class SuggestedFollowUpQuestions(BaseModel):
+    """
+    Always include relevant follow-up questions.
+    Must relate to based on query ,response and document mix.
+    Do NOT include answers.
+    """
+
+    tag:  Literal["ul"] = Field(
+        
+        description="HTML container ul",
+    )
+
+    content: str = Field(
+        ...,
+        
+        description="content like '<li>Question...</li>'   Return ONE <ul> block containing multiple <li> items.Do not create multiple ul tags.",
+    )
+
+
+# ─────────────────────────────────────────
+# FINAL RAG RESPONSE MODEL
+# ─────────────────────────────────────────
 class RAGResponse(BaseModel):
-    title: str = Field(..., description="Title on basis of only user query it doesn't depend on context")
+    title: str = Field(
+        ...,
+        description="Short title based ONLY on user query (not dependent on context)",
+    )
+
     html_response: List[HtmlItem] = Field(
         ...,
         description=(
-            "Frontend-ready UI blocks. "
-            "LLM must design semantic structure, not just convert text. "
-            "Choose tables, lists, headings where appropriate."
+            "Frontend-ready structured HTML blocks. "
+            "Use semantic tags properly (h1, h2, p, table, ul, li etc)."
         ),
     )
-    # response: str = Field(
-    #     ...,
-    #     description=(
-    #         "llm response of user query"
-    #     ),
+
+    # IMPORTANT: must be typed list (fixes your schema error)
+    # citation: List[CitationItem] = Field(
+    #     default_factory=list,
+    #     description="List of files used for answering",
     # )
     citation: List = Field(..., description="Files used for answering")
     is_context_availale: Literal["True", "False"] = Field(
-        ..., description="Whether answer was generated from provided context"
+        ...,
+        description="Whether answer was generated from provided context",
     )
-    suggested_follow_ups: SuggestedFollowUpQuestions = Field(..., description="ul tag must be there ,Three relevant follow-up questions")
+
+    suggested_follow_ups: list[SuggestedFollowUpQuestions] = Field(
+        ...,
+        default_factory=list,
+        min_length=3,
+        max_length=3,
+        description="Must contain ONE ul tag with exactly 3 li questions",
+    )
+
 
 
 import uuid
@@ -212,7 +299,8 @@ class ChatState(TypedDict):
 
 
 def chat_node(state: ChatState):
-    messages = state["messages"][-1]
+    # messages = state["messages"][-1]
+    messages = state["messages"]
     context = state["context"]
     provider=state.get("provider",None)
 
@@ -241,6 +329,13 @@ def chat_node(state: ChatState):
     #     context=context, query=messages, schema=RAGResponse
     #     )
     # print(response)
+    with open(f"{provider}_chat_node.txt", "w") as f: 
+       f.write("messages:\n")
+       for msg in messages:
+           if isinstance(msg, HumanMessage):
+               f.write(f"Human: {msg.content}\n")
+           elif isinstance(msg, AIMessage):
+               f.write(f"AI: {msg.content}\n")
     total_token = response.usage_metadata["total_tokens"]
     return {"messages": [response], "total_token": total_token}
 
@@ -653,12 +748,26 @@ def _invoke_chatbot_with_fallback(
         detail=f"Both LLM providers failed. Last error: {repr(last_err)}",
     )
 
-def unmask_html_list(html_list: list) -> list:
-    state=PiiMaskingState()
+# def unmask_html_list(html_list: list) -> list:
+#     state=PiiMaskingState()
+#     masking = Masking()
+#     for item in html_list:
+#         if isinstance(item, dict) and "content" in item:
+#             item["content"] = masking.unmask_text(item["content"], state=state)
+#     return html_list
+
+
+#  - uses the same state that was built during masking
+def unmask_html_list(html_list: list, state: PiiMaskingState) -> list:
     masking = Masking()
     for item in html_list:
         if isinstance(item, dict) and "content" in item:
             item["content"] = masking.unmask_text(item["content"], state=state)
+        elif isinstance(item, list):
+            # handle nested lists like suggested_follow_ups
+            for nested in item:
+                if isinstance(nested, dict) and "content" in nested:
+                    nested["content"] = masking.unmask_text(nested["content"], state=state)
     return html_list
 
 def safe_json_from_llm(text: str):
@@ -784,6 +893,238 @@ def parse_llm_like_json(text: str) -> dict:
 
 
 
+# @router.post("/ask/{thread_id}", summary="Ask a question over allowed departments")
+# def ask(
+#     thread_id: int,
+#     data: AskRequest,
+#     db: Session = Depends(get_db),
+#     current_user: UserModel = Depends(get_current_active_user),
+# ):
+#     s = time.monotonic()
+#     # if not _can_read(db, current_user, org_id, dept_id):
+#     #     raise HTTPException(status_code=403, detail="No read access to this department")
+#     _is_org_exist(db, org_id=current_user.org_id)
+#     print(data, thread_id, current_user.id, current_user.org_id)
+#     admin = _is_org_admin(db, current_user, current_user.org_id)
+#     if admin:
+#         print("is admin ?")
+#         user_allowed_dept_ids = _list_of_departments(db, current_user)
+#     else:
+#         user_allowed_dept_ids = list_user_access(
+#             user_id=current_user.id, org_id=current_user.org_id, db=db
+#         )
+#     print("all sub org ids", user_allowed_dept_ids,type(user_allowed_dept_ids))
+
+#     allowed = _allowed_thread_id(db=db, current_user=current_user, t_id=thread_id)
+#     print("allowed thread", allowed)
+
+#     if not allowed:
+#         raise HTTPException(status_code=403, detail="Not valid thread for current user")
+#     retrieval_list = []
+#     # for dept_id in user_allowed_dept_ids:
+#     #     vectorStore = vectorManager.get_store(
+#     #         embeddings=embeddings,
+#     #         persist_dir=f"{BASE_DIR}/{data.org_id}/dept/{dept_id}",
+#     #     )
+#     #     rv = retriever.get_retreiver(
+#     #         vector_store=vectorStore.get_vector_store(),
+#     #         search_type="similarity",
+#     #         top_n=data.top_k,
+#     #     )
+#     #     retrieval_list.append(rv)
+#     vectorStore = vectorManager.get_store(
+#         embeddings=embeddings, persist_dir=f"{BASE_DIR}/{current_user.org_id}"
+#     )
+#     # rv = retriever.get_retreiver(
+#     #     vector_store=vectorStore.get_vector_store(),
+#     #     search_type="similarity",
+#     #     top_n=data.top_k
+#     # )
+    
+#     # rv = retriever.get_retreiver_by_document_id(
+#     #     vector_store=vectorStore.get_vector_store(),
+#     #     search_type="similarity",
+#     #     top_n=data.top_k,
+#     #     document_id=user_allowed_dept_ids[3],
+#     # )
+#     if admin:
+#         rv = retriever.get_retreiver(
+#         vector_store=vectorStore.get_vector_store(),
+#         search_type="similarity",
+#         top_n=data.top_k
+#     )
+#     else:
+#       user_allowed_dept_ids.append("global")
+#       rv = retriever.get_retreiver_by_department_ids(
+#         vector_store=vectorStore.get_vector_store(),
+#         search_type="similarity",
+#         top_n=data.top_k,
+#         dept_ids=user_allowed_dept_ids
+#       )
+#     retrieval_list.append(rv)
+#     print("test time", time.monotonic() - s)
+#     rvm = EnsembleRetriever(retrievers=retrieval_list)
+#     docs_list = rvm.invoke(input=data.q)
+ 
+#     print("context extracton time", time.monotonic() - s)
+    
+#     ss = time.monotonic()
+#     masking_state = PiiMaskingState()
+#     masking = Masking()
+    
+    
+#     masked_docs = masking.mask_texts(docs_list, masking_state)
+#     print("masking time", time.monotonic() - ss)
+#     # print("org_docs_list", docs_list)
+#     # print("mask_docs_list", masked_docs)
+    
+#     s1 = time.monotonic()
+#     with PyMySQLSaver.from_conn_string(
+#         conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
+#     ) as checkpointer:
+#         chatbot = builder(checkpointer=checkpointer)
+#         print(type(thread_id), thread_id)
+#         config = {"configurable": {"thread_id": thread_id}}
+#         provider=_get_thread_provider(db,current_user, thread_id)
+#         answer = chatbot.invoke(
+#             {"messages": data.q, "context": masked_docs,"provider":provider}, config=config
+#         )
+#     #  print("answer",answer)
+
+#     siz = sys.getsizeof(rvm)
+#     # print("output",answer['messages'][-1].content)
+#     import json, re
+
+#     # print("output", answer['messages'][-1].content)
+#     res = answer['messages'][-1].content
+#     print("type of res", type(res))
+
+    
+#     # output = safe_json_from_llm(res)
+
+#     e = time.monotonic()
+
+
+#     # res=answer['messages'][-1].content
+#     res=res.replace("```json","").replace("```","")
+#     print("output after removing code fence",res)
+#     output=parse_llm_like_json(res)
+#     # output = json.loads(res)
+#     e = time.monotonic()
+#     # print("response time",e-s)
+#     # print("output",output)
+#     print("masked html_response",output['html_response'])
+
+#     # s1=time.monotonic()
+#     serialize_doc_list = documents_to_dicts(docs_list)
+#     print("output citation",output['citation'])
+#     my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
+#     output['html_response']=unmask_html_list(output['html_response'])
+#     print("unmasked html_response",output['html_response'])
+#     print("time1", time.monotonic() - s1)
+     
+#     llm_response = extract_text_only_from_html(output["html_response"])
+#     # print(type(llm_response),llm_response)
+#     if output["is_context_availale"] == "True":
+
+#         chat_message = ChatMessage(
+#             query=data.q,
+#             response=llm_response,
+#             thread_id=thread_id,
+
+#             tokens=answer["total_token"],
+#             citation=my_link,
+#             html_response=output["html_response"],
+#             unanswer_query=False,
+#         )
+#     else:
+#         chat_message = ChatMessage(
+#             query=data.q,
+#             response=llm_response,
+#             thread_id=thread_id,
+
+#             tokens=answer["total_token"],
+#             citation=my_link,
+#             html_response=output["html_response"],  
+#             unanswer_query=True,
+#         )
+#     db.add(chat_message)
+
+#     # 
+#     # print(type(thread_id),type(data.org_id),type(output["title"]))
+#     update_chat_thread_description(
+#         db, current_user.org_id, current_user.id, thread_id, description=output["title"]
+#     )
+#     db.commit()
+#     output['html_response'].append({
+#         "tag":"h1",
+#         "content":"Suggested Follow Up Questions"
+#     })
+#     output['html_response'].append(output['suggested_follow_ups'])
+#     # dept_id=docs_list[0].metadata.get("dept_id",None)
+#     # if dept_id is not None:
+#     #     if dept_id=='global':
+#     #         dept_id=0
+  
+#     # user_license_and_token_update(
+#     #     db=db,
+#     #     user_id=current_user.id,
+#     #     dept_id=dept_id,
+#     #     tokens_used=answer["total_token"],
+     
+#     # )
+#     # dept_license_and_token_update(
+#     #     db=db,
+#     #     dept_id=dept_id ,
+#     #     org_id=current_user.org_id,
+#     #     tokens_used=answer["total_token"],
+#     # )
+#     # cit=create_link_for_citation(db,current_user,citations=output['citation'],sources=docs_list)
+#     print("model response time", time.monotonic() - s1)
+#     print("total time", time.monotonic() - s)
+#     # print(cit)
+#     return {
+#         "query_time": e - s,
+#         "html_response": output["html_response"],
+#         "response": llm_response,
+#         "citations": output["citation"],
+#         "total_token": answer["total_token"],
+     
+#         "links": my_link,
+#     }
+#     # return {"query_time":e-s,"response":output['response'],"html_response":output['html_response'],"citations":output['citation'],"total_token":answer['total_token'],"is_context_available":output['is_context_availale']}
+#     # return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list,"size":siz}
+
+# def _build_bm25_retriever(docs_list: list, top_k: int) -> BM25Retriever:
+#     """
+#     Build a BM25 keyword retriever from already-retrieved vector docs.
+#     This helps surface formula chunks that semantic search misses because
+#     math symbols (∑, α, F1) embed poorly.
+#     """
+#     bm25 = BM25Retriever.from_documents(docs_list)
+#     bm25.k = top_k
+#     return bm25
+
+def _build_bm25_retriever(docs_list: list, top_k: int = 5) -> BM25Retriever:
+    """
+    Build a BM25 keyword retriever from already-retrieved vector docs.
+    top_k is hardcoded to 5 — wide retrieval via vector search (top_n=20),
+    but only 5 best chunks reach the LLM to control cost.
+    """
+    bm25 = BM25Retriever.from_documents(docs_list)
+    bm25.k = top_k  # controls how many chunks go to EnsembleRetriever → LLM
+    return bm25
+
+
+
+
+
+
+
+
+
+from langchain_core.messages import HumanMessage  
+
 @router.post("/ask/{thread_id}", summary="Ask a question over allowed departments")
 def ask(
     thread_id: int,
@@ -792,10 +1133,9 @@ def ask(
     current_user: UserModel = Depends(get_current_active_user),
 ):
     s = time.monotonic()
-    # if not _can_read(db, current_user, org_id, dept_id):
-    #     raise HTTPException(status_code=403, detail="No read access to this department")
     _is_org_exist(db, org_id=current_user.org_id)
     print(data, thread_id, current_user.id, current_user.org_id)
+
     admin = _is_org_admin(db, current_user, current_user.org_id)
     if admin:
         print("is admin ?")
@@ -804,125 +1144,171 @@ def ask(
         user_allowed_dept_ids = list_user_access(
             user_id=current_user.id, org_id=current_user.org_id, db=db
         )
-    print("all sub org ids", user_allowed_dept_ids,type(user_allowed_dept_ids))
+    print("all sub org ids", user_allowed_dept_ids, type(user_allowed_dept_ids))
 
     allowed = _allowed_thread_id(db=db, current_user=current_user, t_id=thread_id)
     print("allowed thread", allowed)
 
     if not allowed:
         raise HTTPException(status_code=403, detail="Not valid thread for current user")
+
     retrieval_list = []
-    # for dept_id in user_allowed_dept_ids:
-    #     vectorStore = vectorManager.get_store(
-    #         embeddings=embeddings,
-    #         persist_dir=f"{BASE_DIR}/{data.org_id}/dept/{dept_id}",
-    #     )
-    #     rv = retriever.get_retreiver(
-    #         vector_store=vectorStore.get_vector_store(),
-    #         search_type="similarity",
-    #         top_n=data.top_k,
-    #     )
-    #     retrieval_list.append(rv)
     vectorStore = vectorManager.get_store(
         embeddings=embeddings, persist_dir=f"{BASE_DIR}/{current_user.org_id}"
     )
-    # rv = retriever.get_retreiver(
-    #     vector_store=vectorStore.get_vector_store(),
-    #     search_type="similarity",
-    #     top_n=data.top_k
-    # )
-    
-    # rv = retriever.get_retreiver_by_document_id(
-    #     vector_store=vectorStore.get_vector_store(),
-    #     search_type="similarity",
-    #     top_n=data.top_k,
-    #     document_id=user_allowed_dept_ids[3],
-    # )
+
     if admin:
         rv = retriever.get_retreiver(
-        vector_store=vectorStore.get_vector_store(),
-        search_type="similarity",
-        top_n=data.top_k
-    )
+            vector_store=vectorStore.get_vector_store(),
+            search_type="similarity",
+            top_n=data.top_k
+        )
     else:
-      user_allowed_dept_ids.append("global")
-      rv = retriever.get_retreiver_by_department_ids(
-        vector_store=vectorStore.get_vector_store(),
-        search_type="similarity",
-        top_n=data.top_k,
-        dept_ids=user_allowed_dept_ids
-      )
+        user_allowed_dept_ids.append("global")
+        rv = retriever.get_retreiver_by_department_ids(
+            vector_store=vectorStore.get_vector_store(),
+            search_type="similarity",
+            top_n=data.top_k,
+            dept_ids=user_allowed_dept_ids
+        )
+
     retrieval_list.append(rv)
     print("test time", time.monotonic() - s)
+
+
+
+
+    
+    try:
+        candidate_docs = rv.invoke(data.q)  # retrieves top_k=20 from swagger
+
+        if candidate_docs:
+            bm25_retriever = _build_bm25_retriever(
+                candidate_docs,
+                top_k=5   # ← always 5 to LLM, regardless of data.top_k
+            )
+            retrieval_list.append(bm25_retriever)
+            print(f"BM25 retriever built with {len(candidate_docs)} candidate docs, sending 5 to LLM")
+    except Exception as e:
+        print(f"BM25 build skipped: {e}")
+    # try:
+    #     candidate_docs = rv.invoke(data.q)
+
+    #     if candidate_docs:
+    #         bm25_retriever = _build_bm25_retriever(candidate_docs, top_k=min(data.top_k, len(candidate_docs)))
+    #         retrieval_list.append(bm25_retriever)
+    #         print(f"BM25 retriever built with {len(candidate_docs)} candidate docs")
+    # except Exception as e:
+    #     # BM25 is best-effort — never block the main flow
+    #     print(f"BM25 build skipped: {e}")
+    # if len(retrieval_list) > 1:
+    #     rvm = EnsembleRetriever(
+    #         retrievers=retrieval_list,
+    #         weights=[0.6, 0.4],   # 60% semantic, 40% keyword/BM25
+    #     )
+    # else:
+
     rvm = EnsembleRetriever(retrievers=retrieval_list)
     docs_list = rvm.invoke(input=data.q)
- 
-    print("context extracton time", time.monotonic() - s)
+
+    # print("=== RETRIEVED CHUNKS ===")
+    # for i, doc in enumerate(docs_list):
+    #     print(f"\n--- Chunk {i+1} ---")
+    #     print(doc.page_content[:500])
+    #     print("Metadata:", doc.metadata)
+    # print("=== END CHUNKS ===")
     
+    
+
+   
+
+    print("context extracton time", time.monotonic() - s)
+
     ss = time.monotonic()
     masking_state = PiiMaskingState()
     masking = Masking()
-    
-    
+
     masked_docs = masking.mask_texts(docs_list, masking_state)
+
+
+
+    print("=== CHUNKS SENT TO LLM ===")
+    for i, doc in enumerate(masked_docs):
+        print(f"\n--- Chunk {i+1} ---")
+        print(doc.page_content)
+    print("=== END ===")
+    
     print("masking time", time.monotonic() - ss)
-    # print("org_docs_list", docs_list)
-    # print("mask_docs_list", masked_docs)
+
+
     
     s1 = time.monotonic()
+
+    
     with PyMySQLSaver.from_conn_string(
         conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
     ) as checkpointer:
         chatbot = builder(checkpointer=checkpointer)
-        print(type(thread_id), thread_id)
-        config = {"configurable": {"thread_id": thread_id}}
-        provider=_get_thread_provider(db,current_user, thread_id)
+
+        #  Use a stable unique key per org+thread so it restores the same memory
+        # (Multi-tenant safe and avoids collision between orgs)
+        memory_thread_id = f"{current_user.org_id}:{thread_id}"
+
+        config = {"configurable": {"thread_id": str(memory_thread_id)}}
+
+        provider = _get_thread_provider(db, current_user, thread_id)
+
+        #  Send current query as HumanMessage so LangGraph appends to messages history
         answer = chatbot.invoke(
-            {"messages": data.q, "context": masked_docs,"provider":provider}, config=config
+            {
+                "messages": [HumanMessage(content=data.q)],  # IMPORTANT
+                "context": masked_docs,
+                #   "context": docs_list,
+                "provider": provider,
+            },
+            config=config
         )
-    #  print("answer",answer)
+        # print
+    
 
     siz = sys.getsizeof(rvm)
-    # print("output",answer['messages'][-1].content)
     import json, re
 
-    # print("output", answer['messages'][-1].content)
     res = answer['messages'][-1].content
     print("type of res", type(res))
 
-    
-    # output = safe_json_from_llm(res)
-
     e = time.monotonic()
 
+    res = res.replace("```json", "").replace("```", "")
+    print("output after removing code fence", res)
 
-    # res=answer['messages'][-1].content
-    res=res.replace("```json","").replace("```","")
-    print("output after removing code fence",res)
-    output=parse_llm_like_json(res)
-    # output = json.loads(res)
+    output = parse_llm_like_json(res)
+
     e = time.monotonic()
-    # print("response time",e-s)
-    # print("output",output)
-    print("masked html_response",output['html_response'])
+    print("masked html_response", output['html_response'])
 
-    # s1=time.monotonic()
     serialize_doc_list = documents_to_dicts(docs_list)
-    print("output citation",output['citation'])
-    my_link=filter_sources_by_citation(citations=output['citation'],org_id=current_user.org_id,sources=serialize_doc_list)
-    output['html_response']=unmask_html_list(output['html_response'])
-    print("unmasked html_response",output['html_response'])
-    print("time1", time.monotonic() - s1)
-     
-    llm_response = extract_text_only_from_html(output["html_response"])
-    # print(type(llm_response),llm_response)
-    if output["is_context_availale"] == "True":
+    print("output citation", output['citation'])
 
+    my_link = filter_sources_by_citation(
+        citations=output['citation'],
+        org_id=current_user.org_id,
+        sources=serialize_doc_list
+    )
+
+    # output['html_response'] = unmask_html_list(output['html_response'])
+    # print("unmasked html_response", output['html_response'])
+    output['html_response'] = unmask_html_list(output['html_response'], state=masking_state)
+    print("unmasked html_response", output['html_response'])
+    print("time1", time.monotonic() - s1)
+
+    llm_response = extract_text_only_from_html(output["html_response"])
+
+    if output["is_context_availale"] == "True":
         chat_message = ChatMessage(
             query=data.q,
             response=llm_response,
             thread_id=thread_id,
-
             tokens=answer["total_token"],
             citation=my_link,
             html_response=output["html_response"],
@@ -933,58 +1319,44 @@ def ask(
             query=data.q,
             response=llm_response,
             thread_id=thread_id,
-
             tokens=answer["total_token"],
             citation=my_link,
-            html_response=output["html_response"],  
+            html_response=output["html_response"],
             unanswer_query=True,
         )
+
     db.add(chat_message)
 
-    # 
-    # print(type(thread_id),type(data.org_id),type(output["title"]))
     update_chat_thread_description(
         db, current_user.org_id, current_user.id, thread_id, description=output["title"]
     )
     db.commit()
+
     output['html_response'].append({
-        "tag":"h1",
-        "content":"Suggested Follow Up Questions"
+        "tag": "h1",
+        "content": "Suggested Follow Up Questions"
     })
     output['html_response'].append(output['suggested_follow_ups'])
-    # dept_id=docs_list[0].metadata.get("dept_id",None)
-    # if dept_id is not None:
-    #     if dept_id=='global':
-    #         dept_id=0
-  
-    # user_license_and_token_update(
-    #     db=db,
-    #     user_id=current_user.id,
-    #     dept_id=dept_id,
-    #     tokens_used=answer["total_token"],
-     
-    # )
-    # dept_license_and_token_update(
-    #     db=db,
-    #     dept_id=dept_id ,
-    #     org_id=current_user.org_id,
-    #     tokens_used=answer["total_token"],
-    # )
-    # cit=create_link_for_citation(db,current_user,citations=output['citation'],sources=docs_list)
+
     print("model response time", time.monotonic() - s1)
     print("total time", time.monotonic() - s)
-    # print(cit)
+
     return {
         "query_time": e - s,
         "html_response": output["html_response"],
         "response": llm_response,
         "citations": output["citation"],
         "total_token": answer["total_token"],
-     
         "links": my_link,
-    }
-    # return {"query_time":e-s,"response":output['response'],"html_response":output['html_response'],"citations":output['citation'],"total_token":answer['total_token'],"is_context_available":output['is_context_availale']}
-    # return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list,"size":siz}
+        "source":docs_list,
+        "raw_answer":answer
+         }
+     
+    return {"query_time":e-s,"response":output['response'],"html_response":output['html_response'],"citations":output['citation'],"total_token":answer['total_token'],"is_context_available":output['is_context_availale']}
+    return {"query_time":e-s,"response":answer['messages'][-1].content,"total_token":answer['total_token'],"sources":docs_list,"size":siz}
+
+
+
 
 
 def _get_suborg_by_document_id(db: Session, document_id_list: list[int]):

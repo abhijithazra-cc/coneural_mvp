@@ -3,6 +3,7 @@ import threading
 from typing import Dict
 
 import sys
+from app.Rag.document_loaders.DocLoader import DocLoader
 from pympler import asizeof
 from app.Rag.document_loaders.PdfLoader import PdfLoader
 from app.Rag.document_loaders.ImageLoader import ImageLoader
@@ -27,6 +28,7 @@ class DocumentManager:
         ".ppt": PptLoader,
         ".md": MarkdownLoader,
         ".csv": CsvLoader,
+        ".docx": DocLoader,
         # Images
         ".avif": ImageLoader,
         ".bmp": ImageLoader,

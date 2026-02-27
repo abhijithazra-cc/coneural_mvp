@@ -1,0 +1,22 @@
+messages:
+Human: RAG answer quality   what do you mean by it
+AI: {
+    "title": "RAG Answer Quality",
+    "html_response": [
+        {
+            "tag": "p",
+            "content": "Answer quality is impacted by prompt engineering (sources: 111_143_1771484498_Artificial intelligence is transforming the way organizations store.docx). Additionally, unanswerable queries should be flagged clearly (sources: 111_143_1771484498_Artificial intelligence is transforming the way organizations store.docx)."
+        }
+    ],
+    "citation": [
+        "111_143_1771484498_Artificial intelligence is transforming the way organizations store.docx"
+    ],
+    "is_context_availale": "True",
+    "suggested_follow_ups": [
+        {
+            "tag": "ul",
+            "content": "<li>What is prompt engineering?</li><li>How does prompt engineering influence answer quality?</li><li>What are the mechanisms for flagging unanswerable queries?</li>"
+        }
+    ]
+}
+Human: Department allocation formula ?

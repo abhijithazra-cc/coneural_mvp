@@ -1,0 +1,74 @@
+messages:
+Human: what is RAG answer quality
+AI: {
+  "title": "RAG Answer Quality",
+  "html_response": [
+    {
+      "tag": "h2",
+      "content": "What is RAG Answer Quality?"
+    },
+    {
+      "tag": "p",
+      "content": "RAG answer quality (Q) may be modeled as Q = relevance * grounding * coherence. The grounding factor (G) is defined as the ratio of retrieved_context_tokens to total_context_tokens. If G is less than 0.5, the system may hallucinate, and the hallucination probability H is approximately 1 - G (sources: 111_143_1771997066_Artificial intelligence is transforming the way organizations store.docx)."
+    }
+  ],
+  "citation": [
+    "111_143_1771997066_Artificial intelligence is transforming the way organizations store.docx"
+  ],
+  "is_context_availale": "True",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>How is the grounding factor calculated in practice?</li><li>What strategies reduce hallucination probability in RAG systems?</li><li>How do relevance and coherence contribute to answer quality?</li>"
+    }
+  ]
+}
+Human: what is Gravitational force  formula
+AI: {
+  "title": "Gravitational Force Formula",
+  "html_response": [
+    {
+      "tag": "h2",
+      "content": "Gravitational Force Formula"
+    },
+    {
+      "tag": "p",
+      "content": "The gravitational force formula is F = G(m1m2)/r^2 (sources: 111_143_1771852409_Artificial intelligence is transforming the way organizations store.docx)."
+    }
+  ],
+  "citation": [
+    "111_143_1771852409_Artificial intelligence is transforming the way organizations store.docx"
+  ],
+  "is_context_availale": "True",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>What does each variable represent in the gravitational force formula?</li><li>Where can the value of the gravitational constant (G) be found?</li><li>Are there any examples of calculating gravitational force in the context?</li>"
+    }
+  ]
+}
+Human: what is Retention formula  formula
+AI: {
+  "title": "Retention Formula",
+  "html_response": [
+    {
+      "tag": "h2",
+      "content": "Retention Formula"
+    },
+    {
+      "tag": "p",
+      "content": "The retention formula is given by R = policy_years * __DATE_TIME_3_dac10aec__ (sources: 111_143_1771997066_Artificial intelligence is transforming the way organizations store.docx)."
+    }
+  ],
+  "citation": [
+    "111_143_1771997066_Artificial intelligence is transforming the way organizations store.docx"
+  ],
+  "is_context_availale": "True",
+  "suggested_follow_ups": [
+    {
+      "tag": "ul",
+      "content": "<li>What does the variable __DATE_TIME_3_dac10aec__ represent in the retention formula?</li><li>How is the retention period used to determine document archiving?</li><li>Are there exceptions to the retention policy described in the document?</li>"
+    }
+  ]
+}
+Human: what is Revenue formula Rev 
