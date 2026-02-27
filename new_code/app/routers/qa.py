@@ -1179,6 +1179,7 @@ def ask(
 
 
     
+    
     try:
         candidate_docs = rv.invoke(data.q)  # retrieves top_k=20 from swagger
 
@@ -1237,7 +1238,7 @@ def ask(
         print(f"\n--- Chunk {i+1} ---")
         print(doc.page_content)
     print("=== END ===")
-    
+
     print("masking time", time.monotonic() - ss)
 
 
