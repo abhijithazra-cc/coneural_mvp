@@ -1,0 +1,96 @@
+# main.py
+import os
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.database import Base, engine
+
+# 🔹 Import all models so SQLAlchemy sees every table + foreign key
+import app.models  # noqa: F401
+from fastapi import FastAPI
+
+# from fastapi_users import FastAPIUsers
+# from fastapi_users import fastapi_users
+# from fastapi_users.db import SQLAlchemyUserDatabase
+
+# from fastapi_users import schemas
+
+# class User(schemas.BaseUser):
+#     pass  # Add extra fields here if you want, e.g., full_name, role
+
+# class UserCreate(schemas.BaseUserCreate):
+#     pass
+
+# class UserUpdate(schemas.BaseUserUpdate):
+#     pass
+
+
+# fastapi_users = FastAPI/Users()
+
+# 🔹 Create the single FastAPI app
+app = FastAPI(
+    title="Coneural Backend v3",
+    version="1.0.0",
+    description="AI-powered SaaS backend for orgs, departments, and document ingestion",
+)
+from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(status_code=exc.status_code, content={"message": exc.detail})
+
+
+# 🔹 CORS (relaxed for dev; restrict origins in prod)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # e.g. ["https://your-frontend.com"] in prod
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 🔹 Create tables if not using Alembic migrations
+Base.metadata.create_all(bind=engine)
+
+# 🔹 Import routers AFTER app + models
+from app.routers.auth import router as auth_router  # /auth
+from app.routers.organizations import router as org_router  # /organizations
+from app.routers.department import (
+    router as suborg_router,
+)  # /departments or /Departments
+from app.routers.users import router as users_router  # /users
+from app.routers.documents import router as docs_router  # /org-documents
+from app.routers.access import router as access_router  # /access
+from app.routers.qa import router as qa_router
+from app.routers.onboarding import router as onboardig_router
+from app.routers.unanswered_qa import router as unanswered_router
+from app.routers.searchdoc import router as searchdoc_router
+
+# 🔹 Attach routers
+app.include_router(auth_router)
+app.include_router(org_router)
+app.include_router(suborg_router)
+app.include_router(users_router)
+app.include_router(docs_router)
+app.include_router(access_router)
+app.include_router(qa_router)
+app.include_router(onboardig_router)
+app.include_router(unanswered_router)
+app.include_router(searchdoc_router)
+
+
+# 🔹 Health / root endpoints
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "Coneural Backend API is running"}
+
+
+@app.get("/health")
+def health_check():
+    return {
+        "ok": True,
+        "db_connected": True,  # just a static flag; add real DB ping if you like
+        "env": os.getenv("ENVIRONMENT", "dev"),
+    }
