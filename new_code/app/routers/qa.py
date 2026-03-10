@@ -230,21 +230,15 @@ builder = (
     .add_node("chat_node", chat_node)
     .add_edge(START, "chat_node")
     .add_edge("chat_node", END)
+    .compile
 )
 
 # Initialize checkpointer
-def get_checkpointer():
-    return PyMySQLSaver.from_conn_string(
-        conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
-    )
+with PyMySQLSaver.from_conn_string(
+    conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
+) as cp:
 
-# Setup checkpointer
-try:
-    with get_checkpointer() as cp:
-        cp.setup()
-except:
-    pass  # Checkpointer might already be set up
-
+    cp.setup()
 
 def _get_thread_provider(db: Session, current_user, thread_id: int) -> str:
     thread = (
@@ -878,15 +872,27 @@ def ask(
     print("masking time", time.monotonic() - ss)
 
     s1 = time.monotonic()
-    with get_checkpointer() as checkpointer:
-        chatbot = builder.compile(checkpointer=checkpointer)
-        print(type(thread_id), thread_id)
-        config = {"configurable": {"thread_id": thread_id}}
+    with PyMySQLSaver.from_conn_string(
+        conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
+    ) as checkpointer:
+        chatbot = builder(checkpointer=checkpointer)
+
+        #  Use a stable unique key per org+thread so it restores the same memory
+        # (Multi-tenant safe and avoids collision between orgs)
+        memory_thread_id = f"{current_user.org_id}:{thread_id}"
+
+        config = {"configurable": {"thread_id": str(memory_thread_id)}}
         provider = _get_thread_provider(db, current_user, thread_id)
         print("provider", provider)
         answer = chatbot.invoke(
-            {"messages": data.q, "context": masked_docs, "provider": provider},
-            config=config,
+            {
+                "messages": [HumanMessage(content=data.q)],  # IMPORTANT
+                "context": masked_docs,
+                #   "context": docs_list,
+                "provider": provider,
+            },
+            config=config
+   
         )
 
     siz = sys.getsizeof(rvm)
