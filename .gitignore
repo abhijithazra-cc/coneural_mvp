@@ -1,4 +1,4 @@
 newcode/.venv/
 __pycache__/
 newcode/*.pyc
-newcode/.env
+newcode/.envnew_code/.env
