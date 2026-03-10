@@ -883,6 +883,7 @@ def ask(
         print(type(thread_id), thread_id)
         config = {"configurable": {"thread_id": thread_id}}
         provider = _get_thread_provider(db, current_user, thread_id)
+        print("provider", provider)
         answer = chatbot.invoke(
             {"messages": data.q, "context": masked_docs, "provider": provider},
             config=config,

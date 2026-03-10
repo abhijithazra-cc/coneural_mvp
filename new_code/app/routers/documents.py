@@ -330,13 +330,43 @@ async def convert(file: UploadFile):
         },
     )
 
+
+from fastapi.responses import FileResponse
+def get_file_bytes(db: Session, document_id: int,current: UserModel) -> bytes:
+    if document_id <= 0:
+        doc = db.query(OrgDocument).filter(OrgDocument.id == document_id,OrgDocument.org_id == current.org_id,OrgDocument.dept_id.is_(None)).first()
+    else:
+        doc = db.query(OrgDocument).filter(OrgDocument.id == document_id,OrgDocument.org_id == current.org_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return base64.b64decode(doc.file_bytes),doc.filename    
+
+@router.get("/download/{doc_id}")
+async def download_file(db: Session=Depends(get_db), doc_id: int = 0,current=Depends(get_current_active_user)):
+    print("download doc_id",doc_id)
+    print("current user",current.org_id,current.id)
+    file_bytes,filename = get_file_bytes(db, int(doc_id), current=current)
+    with open(f"app/filedata/{filename}", "rb") as f:
+        file_bytes = f.read()
+    # file_bytes=
+    return Response(
+        content=file_bytes,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        },
+    )
+        
+
+
+from pathlib import Path
 @router.post(
     "/",
     status_code=status.HTTP_201_CREATED,
     summary="Upload Org Document (PDF/DOCX/TXT) → chunk → store → index",
 )
 async def upload_doc(
-    org_id: int = Form(None),
+ 
     dept_id: Optional[int] = Form(None),
     tag: str = Form(""),
     scope: ScopeEnum = Form(ScopeEnum.department),
@@ -347,6 +377,7 @@ async def upload_doc(
     # ---- normalize scope (match your earlier router semantics) ----
     # You used ScopeEnum.global_scope vs ScopeEnum.department earlier.
     # Map that to string scope for storage/task payload.
+    print("org_id",current.org_id)
     print("dept_id",dept_id)
     if dept_id is None:
         doc_scope="global"
@@ -369,7 +400,7 @@ async def upload_doc(
 
         dept_row = (
             db.query(DepartmentModel)
-            .filter(DepartmentModel.id == dept_id_final, DepartmentModel.org_id == org_id)
+            .filter(DepartmentModel.id == dept_id_final, DepartmentModel.org_id == current.org_id)
             .first()
         )
         if not dept_row:
@@ -391,10 +422,14 @@ async def upload_doc(
                 status_code=413,
                 detail=f"File too large: {file.filename}. Max size is {MAX_FILE_BYTES} bytes.",
             )
-        filename=file.filename.replace(" ", "_")
+        original_filename=file.filename.replace(" ", "_")
+        
+        filename = f"{current.org_id}_{current.id}_{int(time.time())}_{original_filename}"
+        Path(f"app/filedata/{filename}").write_bytes(payload)
         task = upload_file_to_db_task.delay(
             payload=payload,
-            original_filename=filename,
+            original_filename=original_filename,
+            filename=filename,
             content_type=file.content_type,
             org_id=current.org_id,
             dept_id=dept_id_final,   # None for global

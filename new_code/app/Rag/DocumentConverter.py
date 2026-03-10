@@ -5,6 +5,7 @@ import csv
 import subprocess
 import tempfile
 from pathlib import Path
+import fitz
 
 
 class DocumentConverter:
@@ -34,14 +35,16 @@ class DocumentConverter:
     # ===============================
     # Public Method
     # ===============================
-    def convert_to_pdf_bytes(self, file_bytes: bytes, filename: str) -> bytes:
+    def convert_to_pdf_bytes(
+        self, file_bytes: bytes, filename: str, extracted_text: str = None
+    ) -> bytes:
         ext = Path(filename).suffix.lower()
 
         if ext in self.OFFICE_TYPES:
             return self._convert_office(file_bytes, ext)
 
         elif ext in self.IMAGE_TYPES:
-            return self._convert_image(file_bytes)
+            return self._convert_image(file_bytes, extracted_text=extracted_text)
 
         elif ext in self.TEXT_TYPES:
             return self._convert_text(file_bytes)
@@ -99,13 +102,17 @@ class DocumentConverter:
     # ===============================
     # Image → PDF
     # ===============================
-    def _convert_image(self, file_bytes: bytes) -> bytes:
-        from PIL import Image
+    # def _convert_image(self, file_bytes: bytes) -> bytes:
+    #     from PIL import Image
 
-        image = Image.open(io.BytesIO(file_bytes))
-        pdf_buffer = io.BytesIO()
-        image.convert("RGB").save(pdf_buffer, format="PDF")
-        return pdf_buffer.getvalue()
+    #     image = Image.open(io.BytesIO(file_bytes))
+    #     pdf_buffer = io.BytesIO()
+    #     image.convert("RGB").save(pdf_buffer, format="PDF")
+    #     return pdf_buffer.getvalue()
+    # PyMuPDF
+
+    def _convert_image(self, file_bytes: bytes, extracted_text: str = None) -> bytes:
+        return self._convert_plain_text(extracted_text)
 
     # ===============================
     # TXT → PDF

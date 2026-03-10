@@ -353,21 +353,21 @@ def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
     obj = HighlightText()
     my_bytes = obj.highlight_text(my_bytes, chunks=chunks)
 
-    response = upload_pdf_to_github(
-        file_name=filename,
-        owner="rahulkumarcollectcent",
-        token=os.getenv("GITHUB_TOKEN"),
-        folder="uploads",
-        repo="pdf-viewer",
-        pdf_bytes=my_bytes,
-    )
-    print(response)
+    # response = upload_pdf_to_github(
+    #     file_name=filename,
+    #     owner="rahulkumarcollectcent",
+    #     token=os.getenv("GITHUB_TOKEN"),
+    #     folder="uploads",
+    #     repo="pdf-viewer",
+    #     pdf_bytes=my_bytes,
+    # )
+    # print(response)
 
     return {
         "filename": title,
         "pdf": base64.b64encode(my_bytes).decode("utf-8"),
         "document_id": document_id,
-        "link": response["link"],
+        "link": "link_placeholder",
     }
 
 
@@ -640,6 +640,7 @@ MAX_FILE_BYTES = 5 * 1024 * 1024
 # TASK 1: Extract + Store
 # =========================
 from app.Rag.DocumentConverter import DocumentConverter
+from pathlib import Path
 
 
 @celery_app.task(
@@ -650,6 +651,7 @@ from app.Rag.DocumentConverter import DocumentConverter
 def extract_and_store_doc_task(
     payload: bytes,
     original_filename: str,
+    filename: str,
     content_type: str,
     org_id: int,
     dept_id: int | None,
@@ -664,8 +666,6 @@ def extract_and_store_doc_task(
 
         if len(payload) > MAX_FILE_BYTES:
             raise ValueError("File too large")
-
-        filename = f"{org_id}_{user_id}_{int(time.time())}_{original_filename}"
 
         text, docs = extract_text(
             payload,
@@ -685,7 +685,7 @@ def extract_and_store_doc_task(
         file_ext = Path(original_filename).suffix
         if file_ext != ".pdf":
             payload = doc_converter.convert_to_pdf_bytes(
-                file_bytes=payload, filename=original_filename
+                file_bytes=payload, filename=original_filename, extracted_text=text
             )
         compdoc = CompareDoc()
         doc_hash = pickle.dumps(compdoc.create_minhash(text))
@@ -697,7 +697,7 @@ def extract_and_store_doc_task(
             title=original_filename,
             tag=tag,
             scope=doc_scope,
-            filename=original_filename,
+            filename=filename,
             mime_type=content_type or "application/octet-stream",
             size_bytes=len(payload),
             file_bytes=base64.b64encode(payload),
@@ -876,6 +876,7 @@ def embed_and_index_task(payload: dict):
 def upload_file_to_db_task(
     payload: bytes,
     original_filename: str,
+    filename,
     content_type: str,
     org_id: int,
     dept_id: int | None,
@@ -887,6 +888,7 @@ def upload_file_to_db_task(
         extract_and_store_doc_task.s(
             payload,
             original_filename,
+            filename,
             content_type,
             org_id,
             dept_id,
