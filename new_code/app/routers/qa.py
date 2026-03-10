@@ -1105,15 +1105,33 @@ def parse_llm_like_json(text: str) -> dict:
 #     bm25.k = top_k
 #     return bm25
 
-def _build_bm25_retriever(docs_list: list, top_k: int = 5) -> BM25Retriever:
-    """
-    Build a BM25 keyword retriever from already-retrieved vector docs.
-    top_k is hardcoded to 5 — wide retrieval via vector search (top_n=20),
-    but only 5 best chunks reach the LLM to control cost.
-    """
-    bm25 = BM25Retriever.from_documents(docs_list)
-    bm25.k = top_k  # controls how many chunks go to EnsembleRetriever → LLM
-    return bm25
+# def _build_bm25_retriever(docs_list: list, top_k: int = 5) -> BM25Retriever:
+#     """
+#     Build a BM25 keyword retriever from already-retrieved vector docs.
+#     top_k is hardcoded to 5 — wide retrieval via vector search (top_n=20),
+#     but only 5 best chunks reach the LLM to control cost.
+#     """
+#     bm25 = BM25Retriever.from_documents(docs_list)
+#     bm25.k = top_k  # controls how many chunks go to EnsembleRetriever → LLM
+#     return bm25
+
+
+
+from flashrank import Ranker, RerankRequest
+
+_cross_encoder_ranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2")  # loaded once at module level
+
+def _rerank_docs(query: str, docs: list, top_n: int = 5) -> list:
+    """Rerank docs using FlashRank and return top_n most relevant."""
+    if not docs:
+        return docs
+    
+    passages = [{"id": i, "text": doc.page_content} for i, doc in enumerate(docs)]
+    rerank_request = RerankRequest(query=query, passages=passages)
+    results = _cross_encoder_ranker.rerank(rerank_request)
+    
+    top_results = sorted(results, key=lambda x: x["score"], reverse=True)[:top_n]
+    return [docs[r["id"]] for r in top_results]
 
 
 
@@ -1180,18 +1198,18 @@ def ask(
 
     
     
-    try:
-        candidate_docs = rv.invoke(data.q)  # retrieves top_k=20 from swagger
+    # try:
+    #     candidate_docs = rv.invoke(data.q)  # retrieves top_k=20 from swagger
 
-        if candidate_docs:
-            bm25_retriever = _build_bm25_retriever(
-                candidate_docs,
-                top_k=5   # ← always 5 to LLM, regardless of data.top_k
-            )
-            retrieval_list.append(bm25_retriever)
-            print(f"BM25 retriever built with {len(candidate_docs)} candidate docs, sending 5 to LLM")
-    except Exception as e:
-        print(f"BM25 build skipped: {e}")
+    #     if candidate_docs:
+    #         bm25_retriever = _build_bm25_retriever(
+    #             candidate_docs,
+    #             top_k=5   # ← always 5 to LLM, regardless of data.top_k
+    #         )
+    #         retrieval_list.append(bm25_retriever)
+    #         print(f"BM25 retriever built with {len(candidate_docs)} candidate docs, sending 5 to LLM")
+    # except Exception as e:
+    #     print(f"BM25 build skipped: {e}")
     # try:
     #     candidate_docs = rv.invoke(data.q)
 
@@ -1211,6 +1229,20 @@ def ask(
 
     rvm = EnsembleRetriever(retrievers=retrieval_list)
     docs_list = rvm.invoke(input=data.q)
+    print(f"Vector retriever returned {len(docs_list)} chunks")
+
+
+
+
+
+
+    docs_list = _rerank_docs(
+        query=data.q,
+        docs=docs_list,
+        top_n=5
+    )
+    print(f"Reranked to top {len(docs_list)} chunks via FlashRank")
+    print(docs_list)
 
     # print("=== RETRIEVED CHUNKS ===")
     # for i, doc in enumerate(docs_list):

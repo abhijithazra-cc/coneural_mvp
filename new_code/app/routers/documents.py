@@ -320,7 +320,7 @@ MAX_FILE_BYTES = 5 * 1024 * 1024  # example, keep your existing
     summary="Upload Org Document (PDF/DOCX/TXT) → chunk → store → index",
 )
 async def upload_doc(
-    org_id: int = Form(None),
+    #org_id: int = Form(None),
     dept_id: Optional[int] = Form(None),
     tag: str = Form(""),
     scope: ScopeEnum = Form(ScopeEnum.department),
@@ -353,7 +353,7 @@ async def upload_doc(
 
         dept_row = (
             db.query(DepartmentModel)
-            .filter(DepartmentModel.id == dept_id_final, DepartmentModel.org_id == org_id)
+            .filter(DepartmentModel.id == dept_id_final, DepartmentModel.org_id == current.org_id)
             .first()
         )
         if not dept_row:
