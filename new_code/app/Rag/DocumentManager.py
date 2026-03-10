@@ -67,6 +67,6 @@ class DocumentManager:
    
 
 
-# ✅ Global singleton
+#   Global singleton
 # docManager = DocumentManager()
 # print("list of existing vector stores",vectorManager.list_stores())
