@@ -1,6 +1,8 @@
 # app/routers/qa.py
 
+from datetime import datetime, timezone
 from typing import List, Optional
+from zoneinfo import ZoneInfo
 from fastapi import (
     APIRouter,
     Depends,
@@ -11,6 +13,8 @@ from fastapi import (
     WebSocket,
     BackgroundTasks,
 )
+
+
 from app.schemas.request_schema import AskRequest, AskRequestOnDocument
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -45,7 +49,31 @@ import time
 from app.Rag.utils import extract_text_only_from_html
 
 redis_conn = Redis()
+from flashrank import Ranker, RerankRequest
 
+_cross_encoder_ranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2")  # loaded once at module level
+
+def _rerank_docs(query: str, docs: list, top_n: int = 5) -> list:
+    """Rerank docs using FlashRank and return top_n most relevant."""
+    if not docs:
+        return docs
+
+    passages = [{"id": i, "text": doc.page_content} for i, doc in enumerate(docs)]
+    rerank_request = RerankRequest(query=query, passages=passages)
+    results = _cross_encoder_ranker.rerank(rerank_request)
+
+    top_results = sorted(results, key=lambda x: x["score"], reverse=True)[:top_n]
+    return [docs[r["id"]] for r in top_results]
+
+
+
+
+
+
+
+
+
+from langchain_core.messages import HumanMessage  
 
 def _access_public(a: UserAccessDepartment) -> Dict:
     return {
@@ -348,7 +376,7 @@ def test_endpoint(
         query = query.filter(ChatThreads.id < next_id)
 
     messages = (
-        query.order_by(ChatThreads.id.desc())
+        query.order_by(ChatThreads.updated_at.desc())
         .limit(limit + 1)
         .all()
     )
@@ -861,7 +889,14 @@ def ask(
     print("test time", time.monotonic() - s)
     rvm = EnsembleRetriever(retrievers=retrieval_list)
     docs_list = rv.invoke(input=data.q)
-    print("docs_list", docs_list)
+    # print("docs_list", docs_list)
+    docs_list = _rerank_docs(
+        query=data.q,
+        docs=docs_list,
+        top_n=5
+    )
+    print(f"Reranked to top {len(docs_list)} chunks via FlashRank")
+    print(docs_list)
     print("context extracton time", time.monotonic() - s)
 
     ss = time.monotonic()
@@ -944,23 +979,200 @@ def ask(
         )
     db.add(chat_message)
     db.commit()
-    output["html_response"].append(
-        {"tag": "h1", "content": "Suggested Follow Up Questions"}
-    )
-    output["html_response"].append(output["suggested_follow_ups"][0])
-
+    db.flush()
+    db.query(ChatThreads).filter(ChatThreads.id == thread_id,ChatThreads.org_id == current_user.org_id,ChatThreads.user_id == current_user.id).update({"updated_at": datetime.now(ZoneInfo("Asia/Kolkata"))})
+    db.commit()
+    # output["html_response"].append(
+    #     {"tag": "h1", "content": "Suggested Follow Up Questions"}
+    # )
+    # output["html_response"].append(output["suggested_follow_ups"][0])
+    
+    items = re.findall(r'<li>(.*?)</li>', output["suggested_follow_ups"][0]['content'])
+    print("Suggested follow-up questions:", items)
     print("model response time", time.monotonic() - s1)
     print("total time", time.monotonic() - s)
 
     return {
         "query_time": e - s,
         "html_response": output["html_response"],
-        "source": docs_list,
+        "message_id": chat_message.id,
+        "response": llm_response,
+        "citations": output["citation"],
+        "total_token": answer["total_token"],
+        "suggested": items,
+        "links": my_link,
+    }
+
+
+
+from langchain_core.messages import HumanMessage, RemoveMessage
+@router.put("/ask/{thread_id}/edit/{message_id}", summary="Edit the latest chat message and rerun RAG")
+def edit_message(
+    thread_id: int,
+    message_id: int,
+    data: AskRequest,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user),
+):  
+    s = time.monotonic()
+    _is_org_exist(db, org_id=current_user.org_id)
+ 
+    # --- Validate thread ownership ---
+    allowed = _allowed_thread_id(db=db, current_user=current_user, t_id=thread_id)
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Not valid thread for current user")
+ 
+    # --- Fetch the existing chat message row ---
+    chat_message = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.id == message_id, ChatMessage.thread_id == thread_id)
+        .first()
+    )
+    if not chat_message:
+        raise HTTPException(status_code=404, detail="Chat message not found")
+ 
+    # --- Ensure it's the latest message in the thread ---
+    latest_message = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.thread_id == thread_id)
+        .order_by(ChatMessage.id.desc())
+        .first()
+    )
+    if not latest_message or latest_message.id != message_id:
+        raise HTTPException(status_code=403, detail="Only the latest message in a thread can be edited")
+ 
+    # --- STEP 1: Open checkpointer, fetch and remove latest messages FIRST ---
+    with PyMySQLSaver.from_conn_string(
+        conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
+    ) as checkpointer:
+        chatbot = builder(checkpointer=checkpointer)
+ 
+        memory_thread_id = f"{current_user.org_id}:{thread_id}"
+        config = {"configurable": {"thread_id": str(memory_thread_id)}}
+ 
+        provider = _get_thread_provider(db, current_user, thread_id)
+ 
+        # Fetch current checkpoint state
+        current_state = chatbot.get_state(config)
+        if current_state and current_state.values.get("messages"):
+            messages = current_state.values["messages"]
+            messages_to_remove = messages[-2:] if len(messages) >= 2 else messages[-1:]
+ 
+            # Print messages before removing
+            print("=== MESSAGES TO BE REMOVED FROM CHECKPOINT ===")
+            for m in messages_to_remove:
+                print(f"Type: {type(m).__name__} | ID: {m.id} | Content: {m.content}")
+            print("=== END ===")
+ 
+            # Remove stale latest human + AI message pair
+            chatbot.update_state(
+                config,
+                {"messages": [RemoveMessage(id=m.id) for m in messages_to_remove]}
+            )
+            print(f"Removed {len(messages_to_remove)} stale messages from checkpoint")
+ 
+        # --- STEP 2: Determine department access ---
+        admin = _is_org_admin(db, current_user, current_user.org_id)
+        if admin:
+            user_allowed_dept_ids = _list_of_departments(db, current_user)
+        else:
+            user_allowed_dept_ids = list_user_access(
+                user_id=current_user.id, org_id=current_user.org_id, db=db
+            )
+ 
+        # --- STEP 3: Retrieval ---
+        vectorStore = vectorManager.get_store(
+            embeddings=embeddings, persist_dir=f"{BASE_DIR}/{current_user.org_id}"
+        )
+ 
+        if admin:
+            rv = retriever.get_retreiver(
+                vector_store=vectorStore.get_vector_store(),
+                search_type="similarity",
+                top_n=data.top_k,
+            )
+        else:
+            user_allowed_dept_ids.append("global")
+            rv = retriever.get_retreiver_by_department_ids(
+                vector_store=vectorStore.get_vector_store(),
+                search_type="similarity",
+                top_n=data.top_k,
+                dept_ids=user_allowed_dept_ids,
+            )
+ 
+        rvm = EnsembleRetriever(retrievers=[rv])
+        docs_list = rvm.invoke(input=data.q)
+        print(f"Vector retriever returned {len(docs_list)} chunks")
+ 
+        # --- STEP 4: Rerank ---
+        docs_list = _rerank_docs(query=data.q, docs=docs_list, top_n=5)
+        print(f"Reranked to top {len(docs_list)} chunks via FlashRank")
+ 
+        # --- STEP 5: PII Masking ---
+        masking_state = PiiMaskingState()
+        masking = Masking()
+        masked_docs = masking.mask_texts(docs_list, masking_state)
+ 
+        # --- STEP 6: Invoke with edited query — adds fresh messages into same thread ---
+        answer = chatbot.invoke(
+            {
+                "messages": [HumanMessage(content=data.q)],
+                "context": masked_docs,
+                "provider": provider,
+            },
+            config=config,
+        )
+        print(f"Checkpoint updated with new edited messages under thread: {memory_thread_id}")
+ 
+    e = time.monotonic()
+ 
+    # --- Parse output ---
+    res = answer["messages"][-1].content
+    res = res.replace("json", "").replace("", "")
+    output = parse_llm_like_json(res)
+ 
+    output["html_response"] = unmask_html_list(output["html_response"], state=masking_state)
+ 
+    serialize_doc_list = documents_to_dicts(docs_list)
+    my_link = filter_sources_by_citation(
+        citations=output["citation"],
+        org_id=current_user.org_id,
+        sources=serialize_doc_list,
+    )
+ 
+    llm_response = extract_text_only_from_html(output["html_response"])
+ 
+    # --- Overwrite the existing ChatMessage row in DB ---
+    chat_message.query = data.q
+    chat_message.response = llm_response
+    chat_message.tokens = answer["total_token"]
+    chat_message.citation = my_link
+    chat_message.html_response = output["html_response"]
+    chat_message.unanswer_query = output["is_context_availale"] != "True"
+ 
+    db.commit()
+    db.refresh(chat_message)
+    items = re.findall(r'<li>(.*?)</li>', output["suggested_follow_ups"][0]['content'])
+    print("Suggested follow-up questions:", items)
+    # --- Append suggested follow-ups ---
+    # output["html_response"].append({"tag": "h1", "content": "Suggested Follow Up Questions"})
+    # output["html_response"].append(output["suggested_follow_ups"])
+ 
+    print("total edit time", time.monotonic() - s)
+ 
+    return {
+        "query_time": e - s,
+        "html_response": output["html_response"],
         "response": llm_response,
         "citations": output["citation"],
         "total_token": answer["total_token"],
         "links": my_link,
+        "suggested": items,
+        "message_id": chat_message.id,
     }
+
+
+
 
 
 def _get_suborg_by_document_id(db: Session, document_id_list: list[int]):

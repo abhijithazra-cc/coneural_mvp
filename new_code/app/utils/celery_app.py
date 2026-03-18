@@ -351,6 +351,9 @@ def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
     my_bytes = base64.b64decode(my_doc_bytes)
 
     obj = HighlightText()
+    if filename.lower().endswith(".csv"):
+       chunks = obj.extract_chunks_from_docs(source_docs=chunks)
+       print("chunks to highlight", chunks)
     my_bytes = obj.highlight_text(my_bytes, chunks=chunks)
 
     # response = upload_pdf_to_github(
