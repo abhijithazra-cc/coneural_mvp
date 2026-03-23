@@ -559,6 +559,8 @@ def list_documents(
         q = db.query(OrgDocument).filter(
             OrgDocument.org_id == org_id,
             OrgDocument.dept_id == dept_id_int,
+            OrgDocument.deleted_at.isnot(None),
+            
         )
 
     total = q.count()

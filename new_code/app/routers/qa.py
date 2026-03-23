@@ -237,7 +237,7 @@ class ChatState(TypedDict):
 def chat_node(state: ChatState):
     messages = state["messages"]
     context = state["context"]
-    provider = state.get("provider", None)
+    provider = state.get("provider") or  "openai"
 
     if provider == "openai":
         response = llm_openai.generate_answer_with_structure(
@@ -366,12 +366,16 @@ def test_endpoint(
     current_user: UserModel = Depends(get_current_active_user),
     next_id: Optional[int] = 0,
     limit: int = Query(20, le=100),
+    name: Optional[str] = Query(None), 
 ):
     query = db.query(ChatThreads.id, ChatThreads.description).filter(
         ChatThreads.org_id == current_user.org_id,
         ChatThreads.user_id == current_user.id,
     )
-
+    if name and name.strip():
+        query = query.filter(
+            ChatThreads.description.ilike(f"%{name.strip()}%")
+        )
     if next_id:
         query = query.filter(ChatThreads.id < next_id)
 
@@ -560,41 +564,107 @@ def _check_user_access_to_document(
 from urllib.request import urlopen
 
 
+# @router.get("/pdf/{id}", summary="Get citated link by id")
+# def cited(
+#     db: Session = Depends(get_db),
+#     current_user: UserModel = Depends(get_current_active_user),
+#     id: str = "",
+# ):
+#     job = AsyncResult(id, app=celery_app)
+#     while True:
+#         if job.status == "FAILURE":
+#             raise HTTPException(
+#                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#                 detail="Failed to process the citation links.",
+#             )
+
+#         if job.state == "SUCCESS":
+#             break
+
+#         time.sleep(1)
+
+#     if job.status == "SUCCESS":
+#         if job.result:
+#             doc_id = job.result["document_id"]
+#             print("doc_id", doc_id)
+#             _check_user_access_to_document(
+#                 db=db, current_user=current_user, document_id=doc_id
+#             )
+#             pdf_bytes = base64.b64decode(job.result["pdf"])
+#             pdf_url = job.result["link"]
+
+#         return StreamingResponse(
+#             io.BytesIO(pdf_bytes),
+#             media_type="application/pdf",
+#             headers={"Content-Disposition": "inline"},
+#         )
+
+
 @router.get("/pdf/{id}", summary="Get citated link by id")
 def cited(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user),
     id: str = "",
 ):
+    # ✅ Check if PDF already written to disk by the task
+    pdf_path = Path("app/filedata") / f"{id}.pdf"
+
+    if pdf_path.exists():
+        return StreamingResponse(
+            io.BytesIO(pdf_path.read_bytes()),
+            media_type="application/pdf",
+            headers={"Content-Disposition": "inline"},
+        )
+    print("path not exists")
+    # ✅ Fall back to Celery job with a 5s timeout
     job = AsyncResult(id, app=celery_app)
-    while True:
+    elapsed = 0
+    max_wait = 5  # seconds
+
+    while elapsed < max_wait:
         if job.status == "FAILURE":
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to process the citation links.",
+                detail=f"Task {id} failed: {str(job.result)}",
             )
 
         if job.state == "SUCCESS":
             break
 
         time.sleep(1)
-
-    if job.status == "SUCCESS":
-        if job.result:
-            doc_id = job.result["document_id"]
-            print("doc_id", doc_id)
-            _check_user_access_to_document(
-                db=db, current_user=current_user, document_id=doc_id
-            )
-            pdf_bytes = base64.b64decode(job.result["pdf"])
-            pdf_url = job.result["link"]
-
-        return StreamingResponse(
-            io.BytesIO(pdf_bytes),
-            media_type="application/pdf",
-            headers={"Content-Disposition": "inline"},
+        elapsed += 1
+    else:
+        # ⏱️ Timeout exceeded — task still pending/processing
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Document could not be shown. A problem occurred, please try again later.",
         )
 
+    result = job.result
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task {id} completed but returned no result.",
+        )
+
+    doc_id = result.get("document_id")
+    if not doc_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Task {id} result is missing document_id.",
+        )
+
+    _check_user_access_to_document(
+        db=db, current_user=current_user, document_id=doc_id
+    )
+
+    pdf_bytes = base64.b64decode(result["pdf"])
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline"},
+    )
 
 from fastapi.responses import Response
 
@@ -839,169 +909,169 @@ def format_followups(output: dict) -> str:
         return ""
 
 
-@router.post("/ask/{thread_id}", summary="Ask a question over allowed departments")
-def ask(
-    thread_id: int,
-    data: AskRequest,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user),
-):
-    s = time.monotonic()
-    _is_org_exist(db, org_id=current_user.org_id)
-    print(data, thread_id, current_user.id, current_user.org_id)
-    admin = _is_org_admin(db, current_user, current_user.org_id)
-    if admin:
-        print("is admin ?")
-        user_allowed_dept_ids = _list_of_departments(db, current_user)
-    else:
-        user_allowed_dept_ids = list_user_access(
-            user_id=current_user.id, org_id=current_user.org_id, db=db
-        )
-    print("all sub org ids", user_allowed_dept_ids, type(user_allowed_dept_ids))
+# @router.post("/ask/{thread_id}", summary="Ask a question over allowed departments")
+# def ask(
+#     thread_id: int,
+#     data: AskRequest,
+#     db: Session = Depends(get_db),
+#     current_user: UserModel = Depends(get_current_active_user),
+# ):
+#     s = time.monotonic()
+#     _is_org_exist(db, org_id=current_user.org_id)
+#     print(data, thread_id, current_user.id, current_user.org_id)
+#     admin = _is_org_admin(db, current_user, current_user.org_id)
+#     if admin:
+#         print("is admin ?")
+#         user_allowed_dept_ids = _list_of_departments(db, current_user)
+#     else:
+#         user_allowed_dept_ids = list_user_access(
+#             user_id=current_user.id, org_id=current_user.org_id, db=db
+#         )
+#     print("all sub org ids", user_allowed_dept_ids, type(user_allowed_dept_ids))
 
-    allowed = _allowed_thread_id(db=db, current_user=current_user, t_id=thread_id)
-    print("allowed thread", allowed)
+#     allowed = _allowed_thread_id(db=db, current_user=current_user, t_id=thread_id)
+#     print("allowed thread", allowed)
 
-    if not allowed:
-        raise HTTPException(status_code=403, detail="Not valid thread for current user")
+#     if not allowed:
+#         raise HTTPException(status_code=403, detail="Not valid thread for current user")
 
-    retrieval_list = []
-    vectorStore = vectorManager.get_store(
-        embeddings=embeddings, persist_dir=f"{BASE_DIR}/{current_user.org_id}"
-    )
+#     retrieval_list = []
+#     vectorStore = vectorManager.get_store(
+#         embeddings=embeddings, persist_dir=f"{BASE_DIR}/{current_user.org_id}"
+#     )
 
-    if admin:
-        rv = retriever.get_retreiver(
-            vector_store=vectorStore.get_vector_store(),
-            search_type="similarity",
-            top_n=data.top_k,
-        )
-    else:
-        user_allowed_dept_ids.append("global")
-        rv = retriever.get_retreiver_by_department_ids(
-            vector_store=vectorStore.get_vector_store(),
-            search_type="similarity",
-            top_n=data.top_k,
-            dept_ids=user_allowed_dept_ids,
-        )
+#     if admin:
+#         rv = retriever.get_retreiver(
+#             vector_store=vectorStore.get_vector_store(),
+#             search_type="similarity",
+#             top_n=data.top_k,
+#         )
+#     else:
+#         user_allowed_dept_ids.append("global")
+#         rv = retriever.get_retreiver_by_department_ids(
+#             vector_store=vectorStore.get_vector_store(),
+#             search_type="similarity",
+#             top_n=data.top_k,
+#             dept_ids=user_allowed_dept_ids,
+#         )
 
-    retrieval_list.append(rv)
-    print("test time", time.monotonic() - s)
-    rvm = EnsembleRetriever(retrievers=retrieval_list)
-    docs_list = rv.invoke(input=data.q)
-    # print("docs_list", docs_list)
-    docs_list = _rerank_docs(
-        query=data.q,
-        docs=docs_list,
-        top_n=5
-    )
-    print(f"Reranked to top {len(docs_list)} chunks via FlashRank")
-    print(docs_list)
-    print("context extracton time", time.monotonic() - s)
+#     retrieval_list.append(rv)
+#     print("test time", time.monotonic() - s)
+#     rvm = EnsembleRetriever(retrievers=retrieval_list)
+#     docs_list = rv.invoke(input=data.q)
+#     # print("docs_list", docs_list)
+#     docs_list = _rerank_docs(
+#         query=data.q,
+#         docs=docs_list,
+#         top_n=5
+#     )
+#     print(f"Reranked to top {len(docs_list)} chunks via FlashRank")
+#     print(docs_list)
+#     print("context extracton time", time.monotonic() - s)
 
-    ss = time.monotonic()
-    masking_state = PiiMaskingState()
-    masking = Masking()
+#     ss = time.monotonic()
+#     masking_state = PiiMaskingState()
+#     masking = Masking()
 
-    masked_docs = masking.mask_texts(docs_list, masking_state)
-    print("masking time", time.monotonic() - ss)
+#     masked_docs = masking.mask_texts(docs_list, masking_state)
+#     print("masking time", time.monotonic() - ss)
 
-    s1 = time.monotonic()
-    with PyMySQLSaver.from_conn_string(
-        conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
-    ) as checkpointer:
-        chatbot = builder(checkpointer=checkpointer)
+#     s1 = time.monotonic()
+#     with PyMySQLSaver.from_conn_string(
+#         conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
+#     ) as checkpointer:
+#         chatbot = builder(checkpointer=checkpointer)
 
-        #  Use a stable unique key per org+thread so it restores the same memory
-        # (Multi-tenant safe and avoids collision between orgs)
-        memory_thread_id = f"{current_user.org_id}:{thread_id}"
+#         #  Use a stable unique key per org+thread so it restores the same memory
+#         # (Multi-tenant safe and avoids collision between orgs)
+#         memory_thread_id = f"{current_user.org_id}:{thread_id}"
 
-        config = {"configurable": {"thread_id": str(memory_thread_id)}}
-        provider = _get_thread_provider(db, current_user, thread_id)
-        print("provider", provider)
-        answer = chatbot.invoke(
-            {
-                "messages": [HumanMessage(content=data.q)],  # IMPORTANT
-                "context": masked_docs,
-                #   "context": docs_list,
-                "provider": provider,
-            },
-            config=config
+#         config = {"configurable": {"thread_id": str(memory_thread_id)}}
+#         provider = _get_thread_provider(db, current_user, thread_id)
+#         print("provider", provider)
+#         answer = chatbot.invoke(
+#             {
+#                 "messages": [HumanMessage(content=data.q)],  # IMPORTANT
+#                 "context": masked_docs,
+#                 #   "context": docs_list,
+#                 "provider": provider,
+#             },
+#             config=config
    
-        )
+#         )
 
-    siz = sys.getsizeof(rvm)
-    import json, re
+#     siz = sys.getsizeof(rvm)
+#     import json, re
 
-    res = answer["messages"][-1].content
-    e = time.monotonic()
+#     res = answer["messages"][-1].content
+#     e = time.monotonic()
 
-    res = res.replace("```json", "").replace("```", "")
-    output = parse_llm_like_json(res)
+#     res = res.replace("```json", "").replace("```", "")
+#     output = parse_llm_like_json(res)
 
-    print("masked html_response", output["html_response"])
+#     print("masked html_response", output["html_response"])
 
-    serialize_doc_list = documents_to_dicts(docs_list)
-    print("output citation", output["citation"])
-    my_link = filter_sources_by_citation(
-        citations=output["citation"],
-        org_id=current_user.org_id,
-        sources=serialize_doc_list,
-    )
-    output["html_response"] = unmask_html_list(output["html_response"],state=masking_state)
-    print("time1", time.monotonic() - s1)
+#     serialize_doc_list = documents_to_dicts(docs_list)
+#     print("output citation", output["citation"])
+#     my_link = filter_sources_by_citation(
+#         citations=output["citation"],
+#         org_id=current_user.org_id,
+#         sources=serialize_doc_list,
+#     )
+#     output["html_response"] = unmask_html_list(output["html_response"],state=masking_state)
+#     print("time1", time.monotonic() - s1)
 
-    llm_response = extract_text_only_from_html(output["html_response"])
+#     llm_response = extract_text_only_from_html(output["html_response"])
 
-    update_chat_thread_description(
-        db, current_user.org_id, current_user.id, thread_id, description=output["title"]
-    )
+#     update_chat_thread_description(
+#         db, current_user.org_id, current_user.id, thread_id, description=output["title"]
+#     )
 
-    if output["is_context_availale"] == "True":
-        chat_message = ChatMessage(
-            query=data.q,
-            response=llm_response,
-            thread_id=thread_id,
-            tokens=answer["total_token"],
-            citation=my_link,
-            html_response=output["html_response"],
-            unanswer_query=False,
-        )
-    else:
-        chat_message = ChatMessage(
-            query=data.q,
-            response=llm_response,
-            thread_id=thread_id,
-            tokens=answer["total_token"],
-            citation=my_link,
-            html_response=output["html_response"],
-            unanswer_query=True,
-        )
-    db.add(chat_message)
-    db.commit()
-    db.flush()
-    db.query(ChatThreads).filter(ChatThreads.id == thread_id,ChatThreads.org_id == current_user.org_id,ChatThreads.user_id == current_user.id).update({"updated_at": datetime.now(ZoneInfo("Asia/Kolkata"))})
-    db.commit()
-    # output["html_response"].append(
-    #     {"tag": "h1", "content": "Suggested Follow Up Questions"}
-    # )
-    # output["html_response"].append(output["suggested_follow_ups"][0])
+#     if output["is_context_availale"] == "True":
+#         chat_message = ChatMessage(
+#             query=data.q,
+#             response=llm_response,
+#             thread_id=thread_id,
+#             tokens=answer["total_token"],
+#             citation=my_link,
+#             html_response=output["html_response"],
+#             unanswer_query=False,
+#         )
+#     else:
+#         chat_message = ChatMessage(
+#             query=data.q,
+#             response=llm_response,
+#             thread_id=thread_id,
+#             tokens=answer["total_token"],
+#             citation=my_link,
+#             html_response=output["html_response"],
+#             unanswer_query=True,
+#         )
+#     db.add(chat_message)
+#     db.commit()
+#     db.flush()
+#     db.query(ChatThreads).filter(ChatThreads.id == thread_id,ChatThreads.org_id == current_user.org_id,ChatThreads.user_id == current_user.id).update({"updated_at": datetime.now(ZoneInfo("Asia/Kolkata"))})
+#     db.commit()
+#     # output["html_response"].append(
+#     #     {"tag": "h1", "content": "Suggested Follow Up Questions"}
+#     # )
+#     # output["html_response"].append(output["suggested_follow_ups"][0])
     
-    items = re.findall(r'<li>(.*?)</li>', output["suggested_follow_ups"][0]['content'])
-    print("Suggested follow-up questions:", items)
-    print("model response time", time.monotonic() - s1)
-    print("total time", time.monotonic() - s)
+#     items = re.findall(r'<li>(.*?)</li>', output["suggested_follow_ups"][0]['content'])
+#     print("Suggested follow-up questions:", items)
+#     print("model response time", time.monotonic() - s1)
+#     print("total time", time.monotonic() - s)
 
-    return {
-        "query_time": e - s,
-        "html_response": output["html_response"],
-        "message_id": chat_message.id,
-        "response": llm_response,
-        "citations": output["citation"],
-        "total_token": answer["total_token"],
-        "suggested": items,
-        "links": my_link,
-    }
+#     return {
+#         "query_time": e - s,
+#         "html_response": output["html_response"],
+#         "message_id": chat_message.id,
+#         "response": llm_response,
+#         "citations": output["citation"],
+#         "total_token": answer["total_token"],
+#         "suggested": items,
+#         "links": my_link,
+#     }
 
 
 
@@ -1168,7 +1238,7 @@ def edit_message(
         "total_token": answer["total_token"],
         "links": my_link,
         "suggested": items,
-        "message_id": chat_message.id,
+        "id": chat_message.id,
     }
 
 
@@ -1219,8 +1289,81 @@ def get_chat_history(
                 "html_response": msg.html_response,
                 "links": msg.citation,
             }
+            
         )
     return {"message": response, "next_id": new_next_id, "has_more": has_more}
+
+
+
+def _get_list_allowed_documents(db: Session, current_user: UserModel):
+    # Documents belonging to departments the user has access to
+    is_admin = (
+        db.query(UserAccessDepartment)
+        .filter(
+            UserAccessDepartment.org_id == current_user.org_id,
+            UserAccessDepartment.user_id == current_user.id,
+            UserAccessDepartment.user_type == "ADMIN"
+        )
+        .first()
+    )
+
+    # ── Admin: return all org documents regardless of department ─────────
+    if is_admin:
+        results = (
+            db.query(OrgDocument.id)
+            .filter(
+                OrgDocument.org_id == current_user.org_id,
+                OrgDocument.deleted_at.is_(None)
+            )
+            .all()
+        )
+        return [r.id for r in results]
+    dept_docs = (
+        db.query(OrgDocument.id)
+        .join(UserAccessDepartment, OrgDocument.dept_id == UserAccessDepartment.dept_id)
+        .filter(
+            UserAccessDepartment.org_id == current_user.org_id,
+            UserAccessDepartment.user_id == current_user.id,
+            OrgDocument.deleted_at.is_(None)        # exclude soft-deleted
+        )
+    )
+
+    # Global documents (dept_id is NULL)
+    global_docs = (
+        db.query(OrgDocument.id)
+        .filter(
+            OrgDocument.org_id == current_user.org_id,
+            OrgDocument.dept_id.is_(None),
+            OrgDocument.deleted_at.is_(None)        # exclude soft-deleted
+        )
+    )
+
+    # Union both and return flat list of IDs
+    results = dept_docs.union(global_docs).all()
+    return [r.id for r in results]
+
+
+
+@router.post("/ask/{thread_id}", summary="Ask a question over allowed departments")
+def ask(
+    thread_id: int,
+    data: AskRequest,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user),
+):
+    s = time.monotonic()
+    _is_org_exist(db, org_id=current_user.org_id)
+    print(data, thread_id, current_user.id, current_user.org_id)
+    docs=_get_list_allowed_documents(db, current_user)
+    print("allowed documents for user", docs)
+    data=AskRequestOnDocument(document_id=docs, q=data.q, top_k=data.top_k)
+    return ask_by_id(thread_id=thread_id, data=data, db=db, current_user=current_user)
+    
+
+
+
+
+
 
 
 @router.post(
@@ -1256,25 +1399,119 @@ def ask_by_id(
         vector_store=vectorStore.get_vector_store(),
         search_type="similarity",
         top_n=data.top_k,
-        document_ids=data.document_id,
+        document_id=data.document_id,
     )
 
     docs_list = rv.invoke(input=data.q)
-    print("docs_list", docs_list)
+    docs_list = _rerank_docs(
+        query=data.q,
+        docs=docs_list,
+        top_n=5
+    )
+    print(f"Reranked to top {len(docs_list)} chunks via FlashRank")
+    print(docs_list)
+    print("context extracton time", time.monotonic() - s)
 
-    with get_checkpointer() as checkpointer:
-        chatbot = builder.compile(checkpointer=checkpointer)
-        config = {"configurable": {"thread_id": thread_id}}
+    ss = time.monotonic()
+    masking_state = PiiMaskingState()
+    masking = Masking()
 
+    masked_docs = masking.mask_texts(docs_list, masking_state)
+    print("masking time", time.monotonic() - ss)
+
+    s1 = time.monotonic()
+    with PyMySQLSaver.from_conn_string(
+        conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
+    ) as checkpointer:
+        chatbot = builder(checkpointer=checkpointer)
+
+        #  Use a stable unique key per org+thread so it restores the same memory
+        # (Multi-tenant safe and avoids collision between orgs)
+        memory_thread_id = f"{current_user.org_id}:{thread_id}"
+
+        config = {"configurable": {"thread_id": str(memory_thread_id)}}
+        provider = _get_thread_provider(db, current_user, thread_id)
+        print("provider", provider)
         answer = chatbot.invoke(
-            {"messages": data.q, "context": docs_list}, config=config
+            {
+                "messages": [HumanMessage(content=data.q)],  # IMPORTANT
+                "context": masked_docs,
+                #   "context": docs_list,
+                "provider": provider,
+            },
+            config=config
+   
         )
 
+    # siz = sys.getsizeof(rvm)
+    import json, re
+
+    res = answer["messages"][-1].content
     e = time.monotonic()
-    siz = sys.getsizeof(rv)
+
+    res = res.replace("```json", "").replace("```", "")
+    output = parse_llm_like_json(res)
+
+    print("masked html_response", output["html_response"])
+
+    serialize_doc_list = documents_to_dicts(docs_list)
+    print("output citation", output["citation"])
+    my_link = filter_sources_by_citation(
+        citations=output["citation"],
+        org_id=current_user.org_id,
+        sources=serialize_doc_list,
+    )
+    output["html_response"] = unmask_html_list(output["html_response"],state=masking_state)
+    print("time1", time.monotonic() - s1)
+
+    llm_response = extract_text_only_from_html(output["html_response"])
+
+    update_chat_thread_description(
+        db, current_user.org_id, current_user.id, thread_id, description=output["title"]
+    )
+
+    if output["is_context_availale"] == "True":
+        chat_message = ChatMessage(
+            query=data.q,
+            response=llm_response,
+            thread_id=thread_id,
+            tokens=answer["total_token"],
+            citation=my_link,
+            html_response=output["html_response"],
+            unanswer_query=False,
+        )
+    else:
+        chat_message = ChatMessage(
+            query=data.q,
+            response=llm_response,
+            thread_id=thread_id,
+            tokens=answer["total_token"],
+            citation=my_link,
+            html_response=output["html_response"],
+            unanswer_query=True,
+        )
+    db.add(chat_message)
+    db.commit()
+    db.flush()
+    db.query(ChatThreads).filter(ChatThreads.id == thread_id,ChatThreads.org_id == current_user.org_id,ChatThreads.user_id == current_user.id).update({"updated_at": datetime.now(ZoneInfo("Asia/Kolkata"))})
+    db.commit()
+    # output["html_response"].append(
+    #     {"tag": "h1", "content": "Suggested Follow Up Questions"}
+    # )
+    # output["html_response"].append(output["suggested_follow_ups"][0])
+    
+    items = re.findall(r'<li>(.*?)</li>', output["suggested_follow_ups"][0]['content'])
+    print("Suggested follow-up questions:", items)
+    print("model response time", time.monotonic() - s1)
+    print("total time", time.monotonic() - s)
+
     return {
         "query_time": e - s,
-        "response": answer["messages"][-1].content,
+        "html_response": output["html_response"],
+        "id": chat_message.id,
+        "response": llm_response,
+        "citations": output["citation"],
         "total_token": answer["total_token"],
-        "sources": docs_list,
+        "suggested": items,
+        "links": my_link,
     }

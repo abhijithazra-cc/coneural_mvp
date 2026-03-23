@@ -342,29 +342,59 @@ def filter_sources_by_citation(citations, org_id, sources):
 # #         db.close()
 
 
-@celery_app.task
-def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
+# @celery_app.task
+# def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
+#     db = SessionLocal()
+#     # time.sleep(20)  # Simulate a delay for heavy processing
+#     my_doc_bytes, title = _get_doc_by_id(db=db, org_id=org_id, document_id=document_id)
+
+#     my_bytes = base64.b64decode(my_doc_bytes)
+
+#     obj = HighlightText()
+#     if filename.lower().endswith(".csv"):
+#        chunks = obj.extract_chunks_from_docs(source_docs=chunks)
+#        print("chunks to highlight", chunks)
+#     my_bytes = obj.highlight_text(my_bytes, chunks=chunks)
+
+#     # response = upload_pdf_to_github(
+#     #     file_name=filename,
+#     #     owner="rahulkumarcollectcent",
+#     #     token=os.getenv("GITHUB_TOKEN"),
+#     #     folder="uploads",
+#     #     repo="pdf-viewer",
+#     #     pdf_bytes=my_bytes,
+#     # )
+#     # print(response)
+
+#     return {
+#         "filename": title,
+#         "pdf": base64.b64encode(my_bytes).decode("utf-8"),
+#         "document_id": document_id,
+#         "link": "link_placeholder",
+#     }
+
+from pathlib import Path
+
+@celery_app.task(bind=True)
+def helper_filter_sources_by_citation(self, filename, org_id, document_id, chunks):
     db = SessionLocal()
-    # time.sleep(20)  # Simulate a delay for heavy processing
     my_doc_bytes, title = _get_doc_by_id(db=db, org_id=org_id, document_id=document_id)
 
     my_bytes = base64.b64decode(my_doc_bytes)
 
     obj = HighlightText()
     if filename.lower().endswith(".csv"):
-       chunks = obj.extract_chunks_from_docs(source_docs=chunks)
-       print("chunks to highlight", chunks)
+        chunks = obj.extract_chunks_from_docs(source_docs=chunks)
+        print("chunks to highlight", chunks)
     my_bytes = obj.highlight_text(my_bytes, chunks=chunks)
 
-    # response = upload_pdf_to_github(
-    #     file_name=filename,
-    #     owner="rahulkumarcollectcent",
-    #     token=os.getenv("GITHUB_TOKEN"),
-    #     folder="uploads",
-    #     repo="pdf-viewer",
-    #     pdf_bytes=my_bytes,
-    # )
-    # print(response)
+    # ✅ Write PDF bytes using pathlib
+    task_id = self.request.id
+    output_path = Path("app/filedata") / f"{task_id}.pdf"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(my_bytes)
+
+    print(f"PDF written to {output_path}")
 
     return {
         "filename": title,
@@ -372,8 +402,6 @@ def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
         "document_id": document_id,
         "link": "link_placeholder",
     }
-
-
 # import time
 # import base64
 # import pickle
