@@ -390,7 +390,7 @@ def helper_filter_sources_by_citation(self, filename, org_id, document_id, chunk
 
     # ✅ Write PDF bytes using pathlib
     task_id = self.request.id
-    output_path = Path("app/filedata") / f"{task_id}.pdf"
+    output_path = Path("app/citation_files") / f"{task_id}.pdf"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(my_bytes)
 

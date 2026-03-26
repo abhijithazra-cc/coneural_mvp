@@ -368,7 +368,8 @@ def test_endpoint(
     limit: int = Query(20, le=100),
     name: Optional[str] = Query(None), 
 ):
-    query = db.query(ChatThreads.id, ChatThreads.description).filter(
+    print("hello")
+    query = db.query(ChatThreads.id, ChatThreads.description, ChatThreads.updated_at).filter(
         ChatThreads.org_id == current_user.org_id,
         ChatThreads.user_id == current_user.id,
     )
@@ -391,13 +392,18 @@ def test_endpoint(
     new_next_id = messages[-1].id if messages else None
     response = []
     for msg in messages:
+        # print(msg)
         response.append(
             {
                 "thread_id": msg.id,
                 "title": msg.description or "",
+                
+                "date":msg.updated_at.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S"),
             }
         )
+    # return HTTPException(status_code=500, detail="No threads found") 
     return {"messages": response, "next_id": new_next_id, "has_more": has_more}
+    # return {"messages": response, "next_id": new_next_id, "has_more": has_more}
 
 
 @router.delete("/delete_thread/{thread_id}", summary="Delete thread by id")
@@ -607,7 +613,7 @@ def cited(
     id: str = "",
 ):
     # ✅ Check if PDF already written to disk by the task
-    pdf_path = Path("app/filedata") / f"{id}.pdf"
+    pdf_path = Path("app/citation_files") / f"{id}.pdf"
 
     if pdf_path.exists():
         return StreamingResponse(
@@ -615,7 +621,9 @@ def cited(
             media_type="application/pdf",
             headers={"Content-Disposition": "inline"},
         )
-    print("path not exists")
+
+    print("path not exists, falling back to celery job")
+
     # ✅ Fall back to Celery job with a 5s timeout
     job = AsyncResult(id, app=celery_app)
     elapsed = 0
@@ -634,7 +642,6 @@ def cited(
         time.sleep(1)
         elapsed += 1
     else:
-        # ⏱️ Timeout exceeded — task still pending/processing
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Document could not be shown. A problem occurred, please try again later.",
@@ -659,6 +666,14 @@ def cited(
     )
 
     pdf_bytes = base64.b64decode(result["pdf"])
+
+    # ✅ Write to disk so next request serves directly from path
+    try:
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        pdf_path.write_bytes(pdf_bytes)
+        print(f"PDF cached to disk at {pdf_path}")
+    except Exception as e:
+        print(f"Warning: could not write PDF to disk: {e}")  # non-fatal, still serve it
 
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
@@ -1356,7 +1371,8 @@ def ask(
     print(data, thread_id, current_user.id, current_user.org_id)
     docs=_get_list_allowed_documents(db, current_user)
     print("allowed documents for user", docs)
-    data=AskRequestOnDocument(document_id=docs, q=data.q, top_k=data.top_k)
+    # print(data.q, data.top_k)
+    data=AskRequestOnDocument(document_id=docs, q=data.q, top_k=20)
     return ask_by_id(thread_id=thread_id, data=data, db=db, current_user=current_user)
     
 
@@ -1403,6 +1419,7 @@ def ask_by_id(
     )
 
     docs_list = rv.invoke(input=data.q)
+    # print(docs_list)
     docs_list = _rerank_docs(
         query=data.q,
         docs=docs_list,
