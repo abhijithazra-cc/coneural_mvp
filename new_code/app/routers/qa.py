@@ -1280,7 +1280,7 @@ def get_chat_history(
     query = db.query(ChatMessage).filter(
         ChatMessage.thread_id == thread_id,
     )
-
+    document_ids = _get_selected_docs_ids_by_thread_id(db, thread_id)
     if next_id:
         query = query.filter(ChatMessage.id < next_id)
 
@@ -1303,10 +1303,11 @@ def get_chat_history(
                 "response": msg.response,
                 "html_response": msg.html_response,
                 "links": msg.citation,
+               
             }
             
         )
-    return {"message": response, "next_id": new_next_id, "has_more": has_more}
+    return {"message": response, "next_id": new_next_id, "has_more": has_more, "document_ids": document_ids['doc_ids'] if 'doc_ids' in document_ids else []}
 
 
 
@@ -1369,18 +1370,161 @@ def ask(
     s = time.monotonic()
     _is_org_exist(db, org_id=current_user.org_id)
     print(data, thread_id, current_user.id, current_user.org_id)
+
     docs=_get_list_allowed_documents(db, current_user)
     print("allowed documents for user", docs)
     # print(data.q, data.top_k)
-    data=AskRequestOnDocument(document_id=docs, q=data.q, top_k=20)
-    return ask_by_id(thread_id=thread_id, data=data, db=db, current_user=current_user)
+    # data=AskRequestOnDocument(document_id=docs, q=data.q, top_k=20)
+    # return ask_by_id(thread_id=thread_id, data=data, db=db, current_user=current_user)
     
+    s = time.monotonic()
+
+    retrieval_list = []
+
+    allowed = _allowed_thread_id(db=db, current_user=current_user, t_id=thread_id)
+
+    print("allowed thread", allowed)
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Not valid thread for current user")
+
+    vectorStore = vectorManager.get_store(
+        embeddings=embeddings,
+        persist_dir=f"{BASE_DIR}/{current_user.org_id}",
+    )
+    rv = retriever.get_retreiver_by_document_id(
+        vector_store=vectorStore.get_vector_store(),
+        search_type="similarity",
+        top_n=data.top_k,
+        document_id=docs,
+    )
+
+    docs_list = rv.invoke(input=data.q)
+    # print(docs_list)
+    docs_list = _rerank_docs(
+        query=data.q,
+        docs=docs_list,
+        top_n=5
+    )
+    print(f"Reranked to top {len(docs_list)} chunks via FlashRank")
+    print(docs_list)
+    print("context extracton time", time.monotonic() - s)
+
+    ss = time.monotonic()
+    masking_state = PiiMaskingState()
+    masking = Masking()
+
+    masked_docs = masking.mask_texts(docs_list, masking_state)
+    print("masking time", time.monotonic() - ss)
+
+    s1 = time.monotonic()
+    with PyMySQLSaver.from_conn_string(
+        conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
+    ) as checkpointer:
+        chatbot = builder(checkpointer=checkpointer)
+
+        #  Use a stable unique key per org+thread so it restores the same memory
+        # (Multi-tenant safe and avoids collision between orgs)
+        memory_thread_id = f"{current_user.org_id}:{thread_id}"
+
+        config = {"configurable": {"thread_id": str(memory_thread_id)}}
+        provider = _get_thread_provider(db, current_user, thread_id)
+        print("provider", provider)
+        answer = chatbot.invoke(
+            {
+                "messages": [HumanMessage(content=data.q)],  # IMPORTANT
+                "context": masked_docs,
+                #   "context": docs_list,
+                "provider": provider,
+            },
+            config=config
+   
+        )
+
+    # siz = sys.getsizeof(rvm)
+    import json, re
+
+    res = answer["messages"][-1].content
+    e = time.monotonic()
+
+    res = res.replace("```json", "").replace("```", "")
+    output = parse_llm_like_json(res)
+
+    print("masked html_response", output["html_response"])
+
+    serialize_doc_list = documents_to_dicts(docs_list)
+    print("output citation", output["citation"])
+    my_link = filter_sources_by_citation(
+        citations=output["citation"],
+        org_id=current_user.org_id,
+        sources=serialize_doc_list,
+    )
+    output["html_response"] = unmask_html_list(output["html_response"],state=masking_state)
+    print("time1", time.monotonic() - s1)
+
+    llm_response = extract_text_only_from_html(output["html_response"])
+
+    update_chat_thread_description(
+        db, current_user.org_id, current_user.id, thread_id, description=output["title"]
+    )
+
+    if output["is_context_availale"] == "True":
+        chat_message = ChatMessage(
+            query=data.q,
+            response=llm_response,
+            thread_id=thread_id,
+            tokens=answer["total_token"],
+            citation=my_link,
+            html_response=output["html_response"],
+            unanswer_query=False,
+        )
+    else:
+        chat_message = ChatMessage(
+            query=data.q,
+            response=llm_response,
+            thread_id=thread_id,
+            tokens=answer["total_token"],
+            citation=my_link,
+            html_response=output["html_response"],
+            unanswer_query=True,
+        )
+    db.add(chat_message)
+    db.commit()
+    db.flush()
+    db.query(ChatThreads).filter(ChatThreads.id == thread_id,ChatThreads.org_id == current_user.org_id,ChatThreads.user_id == current_user.id).update({"updated_at": datetime.now(ZoneInfo("Asia/Kolkata"))})
+    db.commit()
+
+    # output["html_response"].append(
+    #     {"tag": "h1", "content": "Suggested Follow Up Questions"}
+    # )
+    # output["html_response"].append(output["suggested_follow_ups"][0])
+    
+    items = re.findall(r'<li>(.*?)</li>', output["suggested_follow_ups"][0]['content'])
+    print("Suggested follow-up questions:", items)
+    print("model response time", time.monotonic() - s1)
+    print("total time", time.monotonic() - s)
+
+    return {
+        "query_time": e - s,
+        "html_response": output["html_response"],
+        "id": chat_message.id,
+        "response": llm_response,
+        "citations": output["citation"],
+        "total_token": answer["total_token"],
+        "suggested": items,
+        "links": my_link,
+     
+    }
 
 
 
 
 
-
+def _get_selected_docs_ids_by_thread_id(db: Session, thread_id: int):
+    docs = (
+     db.query(ChatThreads.document_ids).filter(ChatThreads.id == thread_id).first()
+    )
+    return docs.document_ids if docs and docs.document_ids else []
+   
 
 @router.post(
     "/ask/{thread_id}/documents",
@@ -1403,10 +1547,12 @@ def ask_by_id(
     retrieval_list = []
 
     allowed = _allowed_thread_id(db=db, current_user=current_user, t_id=thread_id)
+
     print("allowed thread", allowed)
     if not allowed:
         raise HTTPException(status_code=403, detail="Not valid thread for current user")
-
+    document_ids = _get_selected_docs_ids_by_thread_id(db, thread_id)
+    print("document ids selected for thread", document_ids)
     vectorStore = vectorManager.get_store(
         embeddings=embeddings,
         persist_dir=f"{BASE_DIR}/{current_user.org_id}",
@@ -1512,6 +1658,9 @@ def ask_by_id(
     db.flush()
     db.query(ChatThreads).filter(ChatThreads.id == thread_id,ChatThreads.org_id == current_user.org_id,ChatThreads.user_id == current_user.id).update({"updated_at": datetime.now(ZoneInfo("Asia/Kolkata"))})
     db.commit()
+    if not document_ids:
+       db.query(ChatThreads).filter(ChatThreads.id == thread_id,ChatThreads.org_id == current_user.org_id,ChatThreads.user_id == current_user.id).update({"document_ids": {"doc_ids": list(set( data.document_id))}})
+       db.commit()
     # output["html_response"].append(
     #     {"tag": "h1", "content": "Suggested Follow Up Questions"}
     # )
@@ -1531,4 +1680,5 @@ def ask_by_id(
         "total_token": answer["total_token"],
         "suggested": items,
         "links": my_link,
+        "document_ids": list(set(data.document_id))
     }
