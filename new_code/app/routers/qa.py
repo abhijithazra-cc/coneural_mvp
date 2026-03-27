@@ -1413,8 +1413,10 @@ def ask(
     masking_state = PiiMaskingState()
     masking = Masking()
 
-    masked_docs = masking.mask_texts(docs_list, masking_state)
+    # masked_docs = masking.mask_texts(docs_list, masking_state)
+    query, masked_docs = masking.mask_query_and_docs(data.q, docs_list, masking_state)   
     print("masking time", time.monotonic() - ss)
+    # print("masked docs", masked_docs)
 
     s1 = time.monotonic()
     with PyMySQLSaver.from_conn_string(
@@ -1431,7 +1433,7 @@ def ask(
         print("provider", provider)
         answer = chatbot.invoke(
             {
-                "messages": [HumanMessage(content=data.q)],  # IMPORTANT
+                "messages": [HumanMessage(content=f"Original question: {data.q}  , masked version: {query}")],  # IMPORTANT
                 "context": masked_docs,
                 #   "context": docs_list,
                 "provider": provider,
@@ -1498,7 +1500,7 @@ def ask(
     # )
     # output["html_response"].append(output["suggested_follow_ups"][0])
     
-    items = re.findall(r'<li>(.*?)</li>', output["suggested_follow_ups"][0]['content'])
+    items = re.findall(r'<li>(.*?)</li>', masking.unmask_text(output["suggested_follow_ups"][0]['content'], state=masking_state))
     print("Suggested follow-up questions:", items)
     print("model response time", time.monotonic() - s1)
     print("total time", time.monotonic() - s)
@@ -1578,10 +1580,11 @@ def ask_by_id(
     ss = time.monotonic()
     masking_state = PiiMaskingState()
     masking = Masking()
-
-    masked_docs = masking.mask_texts(docs_list, masking_state)
+    # query=masking.mask_text(data.q, masking_state)
+    # masked_docs = masking.mask_texts(docs_list, masking_state)
+    query, masked_docs = masking.mask_query_and_docs(data.q, docs_list, masking_state)
     print("masking time", time.monotonic() - ss)
-
+    print("masked docs", masked_docs)
     s1 = time.monotonic()
     with PyMySQLSaver.from_conn_string(
         conn_string=os.getenv("CHAT_HISTORY_DATABASE_URL")
@@ -1597,14 +1600,25 @@ def ask_by_id(
         print("provider", provider)
         answer = chatbot.invoke(
             {
-                "messages": [HumanMessage(content=data.q)],  # IMPORTANT
+                "messages": [HumanMessage(content=f"Original question: {data.q}  , masked version: {query}")],  # IMPORTANT
                 "context": masked_docs,
+              
                 #   "context": docs_list,
                 "provider": provider,
             },
             config=config
    
         )
+        # answer = chatbot.invoke(
+        #     {
+        #         "messages": [HumanMessage(content=data.q)],  # IMPORTANT
+        #         "context": masked_docs,
+        #         #   "context": docs_list,
+        #         "provider": provider,
+        #     },
+        #     config=config
+   
+        # )
 
     # siz = sys.getsizeof(rvm)
     import json, re
@@ -1666,7 +1680,7 @@ def ask_by_id(
     # )
     # output["html_response"].append(output["suggested_follow_ups"][0])
     
-    items = re.findall(r'<li>(.*?)</li>', output["suggested_follow_ups"][0]['content'])
+    items = re.findall(r'<li>(.*?)</li>', masking.unmask_text(output["suggested_follow_ups"][0]['content'], state=masking_state))
     print("Suggested follow-up questions:", items)
     print("model response time", time.monotonic() - s1)
     print("total time", time.monotonic() - s)
