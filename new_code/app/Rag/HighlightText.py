@@ -1,6 +1,9 @@
+from typing import List
+
 import fitz  # PyMuPDF
 
 from langchain_core.documents import Document
+import re
 class HighlightText ():
 
     def highlight_text(self,pdf_bytes,chunks):
@@ -18,6 +21,83 @@ class HighlightText ():
         # doc.save(self.output_path, incremental=False)
         doc.close()
         return output_bytes
+    
+
+
+
+
+
+
+
+
+
+
+
+    def extract_chunks_from_docs(
+        self,
+        source_docs: List[Document],
+        min_words: int = 3,
+        max_chunk_words: int = 12,
+    ) -> List[str]:
+        """
+        Pull meaningful text phrases out of LangChain source Documents.
+ 
+        Strategy:
+          1. Take each doc's page_content
+          2. Split on newlines / commas (common in CSV-derived docs)
+          3. Keep only phrases with min_words or more words
+          4. Deduplicate
+ 
+        Args:
+            source_docs      : List[Document] from RetrievalQA / FAISS
+            min_words        : ignore phrases shorter than this
+            max_chunk_words  : cap very long chunks to avoid PDF search misses
+ 
+        Returns:
+            Deduplicated list of text strings ready for highlight_text()
+        """
+        chunks = []
+ 
+        for doc in source_docs:
+            content = doc.page_content
+ 
+            # CSV-to-PDF docs often look like:
+            #   "name: John\nage: 30\ncity: Delhi"
+            # Split on newlines and colons to get individual field values
+            raw_parts = re.split(r"[\n,]+", content)
+ 
+            for part in raw_parts:
+                # Strip "key: value" → take only the value side
+                if ":" in part:
+                    part = part.split(":", 1)[-1]
+ 
+                part = part.strip()
+                words = part.split()
+ 
+                if len(words) < min_words:
+                    continue  # too short, likely noise
+ 
+                # If very long, trim to max_chunk_words for reliable PDF search
+                if len(words) > max_chunk_words:
+                    part = " ".join(words[:max_chunk_words])
+ 
+                chunks.append(part)
+ 
+        # Deduplicate while preserving order
+        seen = set()
+        unique_chunks = []
+        for c in chunks:
+            key = c.lower()
+            if key not in seen:
+                seen.add(key)
+                unique_chunks.append(c)
+ 
+        return unique_chunks
+ 
+
+
+
+
 #   def highlight_text(self, pdf_bytes, chunks, verbose: bool = False):
 #     """
 #     Highlights text in both searchable PDF text and inside images (OCR).

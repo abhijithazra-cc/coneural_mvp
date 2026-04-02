@@ -10,6 +10,8 @@ from app.Rag.document_loaders.TxtLoader import TxtLoader
 from app.Rag.document_loaders.PptLoader import PptLoader
 from app.Rag.document_loaders.CsvLoader import CsvLoader
 from app.Rag.document_loaders.MarkdownLoader import MarkdownLoader
+from app.Rag.document_loaders.ExcelLoader import ExcelLoader
+from app.Rag.document_loaders.DocLoader import DocLoader
 # from app.Rag.document_loaders import PdfLoader,PptLoader,CsvLoader,ImageLoader,TxtLoader
 class DocumentManager:
     """
@@ -27,6 +29,9 @@ class DocumentManager:
         ".ppt": PptLoader,
         ".md": MarkdownLoader,
         ".csv": CsvLoader,
+        ".xlsx": ExcelLoader,
+        ".xls": ExcelLoader,
+        ".docx" : DocLoader,
         # Images
         ".avif": ImageLoader,
         ".bmp": ImageLoader,

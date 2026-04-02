@@ -50,6 +50,8 @@ class OrgDocument(Base):
     file_bytes=Column(LONGBLOB)
     hash_bytes=Column(LargeBinary)
     created_at = Column(DateTime, server_default=func.now())
+    deleted_at=Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True)
 
 class DocChunk(Base):
     __tablename__ = "doc_chunks"

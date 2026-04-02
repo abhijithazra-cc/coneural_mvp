@@ -1,6 +1,102 @@
 
+# from sqlalchemy import (
+#     Column, Integer, Boolean,Computed, ForeignKey, UniqueConstraint, DateTime, func, BigInteger
+# )
+# from app.database import Base
+# from enum import Enum as PyEnum
+# from sqlalchemy import Column, Integer, String, Enum as SAEnum, ForeignKey, Boolean, DateTime
+# from sqlalchemy.sql import func
+# from app.database import Base
+
+# class UserLicenses(Base):
+#     __tablename__ = "user_licenses"   
+#     id = Column(Integer, primary_key=True, index=True)
+
+#     # dept_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=False, index=True)
+#     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+#     allocated_licenses = Column(Integer, nullable=False, default=0)
+#     total_licenses = Column(Integer, nullable=False, server_default="0")
+
+#     used_licenses = Column(Integer, nullable=False, server_default="0")
+
+# # auto calculated: total - used
+#     balance_licenses = Column(
+#     Integer, Computed("allocated_licenses - used_licenses", persisted=True)
+# )
+
+# # auto calculated: licenses * 100000
+#     allocated_tokens = Column(Integer, Computed("allocated_licenses * 100000", persisted=True))
+
+#     used_tokens = Column(Integer, nullable=False, server_default="0")
+
+# # auto calculated: total_tokens - used_tokens
+#     balance_tokens = Column(Integer, Computed("allocated_tokens - used_tokens", persisted=True))
+
+#     created_at = Column(DateTime, server_default=func.now())
+#     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+
+
+
+
+# from sqlalchemy import (
+#     Column, Integer, Boolean,Computed, ForeignKey, UniqueConstraint, DateTime, func, BigInteger
+# )
+# from app.database import Base
+# from enum import Enum as PyEnum
+# from sqlalchemy import Column, Integer, String, Enum as SAEnum, ForeignKey, Boolean, DateTime
+# from sqlalchemy.sql import func
+# from app.database import Base
+
+
+# class CapStatus(PyEnum):
+#     ZERO = "0"
+#     ONE = "1"
+#     TWO = "2"
+
+
+
+# class UserLicenses(Base):
+#     __tablename__ = "user_licenses"   
+#     id = Column(Integer, primary_key=True, index=True)
+
+#     # dept_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=False, index=True)
+#     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+#     allocated_licenses = Column(Integer, nullable=False, default=0)
+#     total_licenses = Column(Integer, nullable=False, server_default="0")
+
+#     used_licenses = Column(Integer, nullable=False, server_default="0")
+
+#     # auto calculated: total - used
+#     balance_licenses = Column(
+#         Integer, Computed("allocated_licenses - used_licenses", persisted=True)
+#     )
+
+#     # auto calculated: licenses * 100000
+#     allocated_tokens = Column(Integer, Computed("allocated_licenses * 100000", persisted=True))
+
+#     used_tokens = Column(Integer, nullable=False, server_default="0")
+
+#     # auto calculated: total_tokens - used_tokens
+#     balance_tokens = Column(Integer, Computed("allocated_tokens - used_tokens", persisted=True))
+
+    
+#     cap_status = Column(
+#         SAEnum(CapStatus),
+#         nullable=False,
+#         default=CapStatus.ZERO
+#     )
+
+#     created_at = Column(DateTime, server_default=func.now())
+#     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+
+
+
 from sqlalchemy import (
-    Column, Integer, Boolean,Computed, ForeignKey, UniqueConstraint, DateTime, func, BigInteger
+    Column, Integer, Boolean, Computed, ForeignKey, UniqueConstraint, DateTime, func, BigInteger
 )
 from app.database import Base
 from enum import Enum as PyEnum
@@ -8,8 +104,15 @@ from sqlalchemy import Column, Integer, String, Enum as SAEnum, ForeignKey, Bool
 from sqlalchemy.sql import func
 from app.database import Base
 
+
+class CapStatus(PyEnum):
+    ZERO = "0"
+    ONE = "1"
+    TWO = "2"
+
+
 class UserLicenses(Base):
-    __tablename__ = "user_licenses"   
+    __tablename__ = "user_licenses"
     id = Column(Integer, primary_key=True, index=True)
 
     # dept_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -19,18 +122,29 @@ class UserLicenses(Base):
 
     used_licenses = Column(Integer, nullable=False, server_default="0")
 
-# auto calculated: total - used
+    # auto calculated: total - used
     balance_licenses = Column(
-    Integer, Computed("allocated_licenses - used_licenses", persisted=True)
-)
+        Integer, Computed("allocated_licenses - used_licenses", persisted=True)
+    )
 
-# auto calculated: licenses * 100000
+    # auto calculated: licenses * 100000
     allocated_tokens = Column(Integer, Computed("allocated_licenses * 100000", persisted=True))
 
     used_tokens = Column(Integer, nullable=False, server_default="0")
 
-# auto calculated: total_tokens - used_tokens
+    # auto calculated: total_tokens - used_tokens
     balance_tokens = Column(Integer, Computed("allocated_tokens - used_tokens", persisted=True))
+
+    #  stores '0','1','2' in DB (NOT 'ZERO','ONE','TWO')
+    cap_status = Column(
+        SAEnum(
+            CapStatus,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            native_enum=False
+        ),
+        nullable=False,
+        default=CapStatus.ZERO
+    )
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

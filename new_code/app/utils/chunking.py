@@ -70,6 +70,7 @@ def extract_text_from_file(
 
 
 def chunk_text(docs, max_tokens: int = 1200, overlap: int = 150):
-    splitter=SemanticSplitter(embeddings=embeddings)
+    splitter=CharacterSplitter(embeddings=embeddings)
+    # splitter=SemanticSplitter(embeddings=embeddings)
     chunks=splitter.split_documents(docs=docs,chunk_size=max_tokens,chunk_overlap=overlap)
     return chunks

@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query,WebSocket,B
 from app.schemas.request_schema import AskRequest,AskRequestOnDocument
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-import os
-from pydantic import BaseModel,Field
+# import os
+# from pydantic import BaseModel,Field
 from app.database import get_db
 from app.services.auth import get_current_active_user,get_current_active_socket_user
 from app.models.user_model import User as UserModel

@@ -35,7 +35,7 @@ class PptLoader(Idocloader):
                         for shape in slide.shapes:
                             if hasattr(shape, "text"):
                             
-                               docs.append(Document(page_content=shape.text, metadata={}))
+                               docs.append(Document(page_content=shape.text, metadata={"filename":filename}))
                     self.documents=docs
                     return docs
 
@@ -49,7 +49,7 @@ class PptLoader(Idocloader):
                         for shape in slide.shapes:
                             if hasattr(shape, "text"):
                             
-                               docs.append(Document(page_content=shape.text, metadata={}))
+                               docs.append(Document(page_content=shape.text, metadata={"filename":filename}))
                     self.documents=docs
                     return docs
 
