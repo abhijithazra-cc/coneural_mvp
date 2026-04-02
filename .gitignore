@@ -1,5 +1,31 @@
+# Virtual environments
+new_code/.venv/
 .venv/
+venv/
+env/
+
+# Python cache
 __pycache__/
-new_code/*.pyc
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment variables (never commit secrets)
+.env
 new_code/.env
 new_code/*.env
+
+# Generated vector stores and FAISS indexes
+new_code/vectorstores/
+new_code/faiss_indexe/
+
+# Temporary / uploaded files
+new_code/temp.pdf
+new_code/app/filedata/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+.eggs/

@@ -1,0 +1,3 @@
+# Single source of truth for Base
+from sqlalchemy.orm import declarative_base
+Base = declarative_base()
