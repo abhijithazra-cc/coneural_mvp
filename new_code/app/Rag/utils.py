@@ -1,5 +1,6 @@
 from langchain_openai.embeddings import OpenAIEmbeddings
 from app.Rag.OpenaiModel import OpenaiModel
+from app.Rag.AnthropicModel import AnthropicModel
 # from app.Rag.GeminiModel import GeminiFlashModel
 import os
 from app.Rag.Retriever import Retriever
@@ -9,6 +10,7 @@ BASE_DIR="vectorstores/org"
 embeddings=OpenAIEmbeddings(api_key=os.getenv('OPENAI_API_KEY'),model='text-embedding-3-small')
 llm_openai=OpenaiModel()
 llm_gemini=GeminiFlashModel()
+llm_anthropic=AnthropicModel()
 # file_utils.py
 from fastapi import UploadFile, HTTPException
 

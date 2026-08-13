@@ -12,9 +12,7 @@ class IVectorstore(ABC):
       @abstractmethod
       def get_vector_store():
           pass
-      @abstractmethod
-      def get_chunks_by_document_id(document_id):
-           pass
+
       @abstractmethod
       def delete_document_by_id(document_id):
            pass

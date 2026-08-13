@@ -503,7 +503,7 @@
 
 
 
-
+from langsmith import traceable
 from dataclasses import dataclass, field
 from email.mime import text
 from typing import Dict, List, Optional, Tuple
@@ -563,27 +563,47 @@ class PiiMaskingState:
 # ───────────────────────── Masking Class ─────────────────────────
 
 
+import threading
+
 class Masking:
-    # Class-level singleton to avoid re-initializing AnalyzerEngine on every instantiation
+    _instance: Optional["Masking"] = None
+    _instance_lock = threading.Lock()
     _analyzer_instance: Optional[AnalyzerEngine] = None
+
+    def __new__(cls, policy: Optional[PiiPolicy] = None):
+        # Double-checked locking so concurrent first-requests don't race
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    instance = super().__new__(cls)
+                    instance._initialized = False
+                    cls._instance = instance
+        return cls._instance
+
+    def __init__(self, policy: Optional[PiiPolicy] = None):
+        # __init__ runs every time Masking() is called, even for the
+        # cached instance — guard so we don't redo setup or silently
+        # let a later call's `policy` override the singleton's config.
+        if self._initialized:
+            return
+        self.policy = policy or self.get_default_policy()
+        self._hash_secret = os.getenv("PII_HASH_SECRET", "change-me-please")
+        self._analyzer = self._get_analyzer()
+        self._initialized = True
 
     @classmethod
     def _get_analyzer(cls) -> AnalyzerEngine:
         if cls._analyzer_instance is None:
-            analyzer = AnalyzerEngine()
-            # Add recognizers only once during singleton creation to avoid duplicates
-            existing = {type(r) for r in analyzer.registry.recognizers}
-            if InAadhaarRecognizer not in existing:
-                analyzer.registry.add_recognizer(InAadhaarRecognizer())
-            if InPanRecognizer not in existing:
-                analyzer.registry.add_recognizer(InPanRecognizer())
-            cls._analyzer_instance = analyzer
+            with cls._instance_lock:
+                if cls._analyzer_instance is None:
+                    analyzer = AnalyzerEngine()
+                    existing = {type(r) for r in analyzer.registry.recognizers}
+                    if InAadhaarRecognizer not in existing:
+                        analyzer.registry.add_recognizer(InAadhaarRecognizer())
+                    if InPanRecognizer not in existing:
+                        analyzer.registry.add_recognizer(InPanRecognizer())
+                    cls._analyzer_instance = analyzer
         return cls._analyzer_instance
-
-    def __init__(self, policy: Optional[PiiPolicy] = None):
-        self.policy = policy or self.get_default_policy()
-        self._hash_secret = os.getenv("PII_HASH_SECRET", "change-me-please")
-        self._analyzer = self._get_analyzer()
 
     # ───────────────────────── Policy helpers ─────────────────────────
 
@@ -793,7 +813,8 @@ class Masking:
             )
 
         return masked_documents
-
+    
+    @traceable(name="query_and_document_masking", project="core", metadata={"description": "Mask query and documents in a single Presidio session"}, tags=["masking"])
     def mask_query_and_docs(
         self,
         query: str,
@@ -887,3 +908,6 @@ class Masking:
             language="en",
             entities=self.policy.entities,
         )
+
+
+masking=Masking()  # Singleton instance for global use

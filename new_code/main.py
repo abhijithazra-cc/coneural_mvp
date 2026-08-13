@@ -4,10 +4,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
+from dotenv import load_dotenv
+from app.Rag.Vectorstore_config import configure_vector_manager
 
 # 🔹 Import all models so SQLAlchemy sees every table + foreign key
 import app.models  # noqa: F401
 from fastapi import FastAPI
+
+load_dotenv()  # Load environment variables from .env file
 # from fastapi_users import FastAPIUsers
 # from fastapi_users import fastapi_users
 # from fastapi_users.db import SQLAlchemyUserDatabase
@@ -24,7 +28,6 @@ from fastapi import FastAPI
 #     pass
 
 
-
 # fastapi_users = FastAPI/Users()
 
 # 🔹 Create the single FastAPI app
@@ -35,18 +38,17 @@ app = FastAPI(
 )
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI, HTTPException, Request
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "message": exc.detail
-        }
-    )
+    return JSONResponse(status_code=exc.status_code, content={"message": exc.detail})
+
+
 # 🔹 CORS (relaxed for dev; restrict origins in prod)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # e.g. ["https://your-frontend.com"] in prod
+    allow_origins=["*"],  # e.g. ["https://your-frontend.com"] in prod
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,18 +58,20 @@ app.add_middleware(
 Base.metadata.create_all(bind=engine)
 
 # 🔹 Import routers AFTER app + models
-from app.routers.auth import router as auth_router            # /auth
-from app.routers.organizations import router as org_router    # /organizations
-from app.routers.department import router as suborg_router  # /departments or /Departments
-from app.routers.users import router as users_router          # /users
-from app.routers.documents import router as docs_router       # /org-documents
-from app.routers.access import router as access_router        # /access
+from app.routers.auth import router as auth_router  # /auth
+from app.routers.organizations import router as org_router  # /organizations
+from app.routers.department import (
+    router as suborg_router,
+)  # /departments or /Departments
+from app.routers.users import router as users_router  # /users
+from app.routers.documents import router as docs_router  # /org-documents
+from app.routers.access import router as access_router  # /access
 from app.routers.qa import router as qa_router
 from app.routers.onboarding import router as onboardig_router
 from app.routers.unanswered_qa import router as unanswered_router
 from app.routers.searchdoc import router as searchdoc_router
-from app.routers.token_usage import router_dept as token_usage_dept_router
-from app.routers.token_usage import router_user as token_usage_user_router  
+from app.routers.search import router as search_router
+
 # 🔹 Attach routers
 app.include_router(auth_router)
 app.include_router(org_router)
@@ -79,17 +83,20 @@ app.include_router(qa_router)
 app.include_router(onboardig_router)
 app.include_router(unanswered_router)
 app.include_router(searchdoc_router)
-app.include_router(token_usage_dept_router)
-app.include_router(token_usage_user_router) 
+app.include_router(search_router)
+
+
+configure_vector_manager()  # Initialize the vector store manager
 # 🔹 Health / root endpoints
 @app.get("/")
 def root():
     return {"status": "ok", "message": "Coneural Backend API is running"}
 
+
 @app.get("/health")
 def health_check():
     return {
         "ok": True,
-        "db_connected": True,         # just a static flag; add real DB ping if you like
+        "db_connected": True,  # just a static flag; add real DB ping if you like
         "env": os.getenv("ENVIRONMENT", "dev"),
     }

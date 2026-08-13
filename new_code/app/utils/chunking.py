@@ -69,8 +69,8 @@ def extract_text_from_file(
 #     return chunks
 
 
-def chunk_text(docs, max_tokens: int = 1200, overlap: int = 150):
-    splitter=CharacterSplitter(embeddings=embeddings)
-    # splitter=SemanticSplitter(embeddings=embeddings)
+def chunk_text(docs, max_tokens: int = 400, overlap: int = 50):
+    # splitter=CharacterSplitter(embeddings=embeddings)
+    splitter=SemanticSplitter(embeddings=embeddings)
     chunks=splitter.split_documents(docs=docs,chunk_size=max_tokens,chunk_overlap=overlap)
     return chunks

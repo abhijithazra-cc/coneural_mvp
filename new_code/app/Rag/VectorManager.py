@@ -1,110 +1,169 @@
-import os
+"""
+VectorManager
+=============
+org_id-first, backend-agnostic registry of vector stores.
+
+Every public method takes org_id — never a raw path/index/collection name —
+so "which org am I operating on" is structurally impossible to omit,
+regardless of whether the configured factory builds FAISS, Pinecone, or
+Qdrant underneath. Each backend's own constructor (see FaissVectorstore /
+PineconeVectorstore / QdrantVectorstore) is what actually turns org_id into
+a directory / index / collection — VectorManager just routes by org_id and
+caches the resulting instance.
+"""
+
+import logging
 import threading
-from typing import Dict
+from typing import Dict, Optional
+
+from langsmith import traceable
+
 from app.Rag.abstractions.IVectorstore import IVectorstore
-from app.Rag.vector_stores.FaissVectorstore import FaissVectorstore  # your class
-from app.Rag.utils import BASE_DIR,embeddings
-import sys
-from pympler import asizeof
+from app.Rag.VectorstoreFactory import VectorstoreFactory
+from app.Rag.utils import embeddings as default_embeddings
+
+logger = logging.getLogger(__name__)
+
+
 class VectorManager:
-    """
-    Singleton registry that stores and manages multiple FaissVectorstore objects.
-    Each unique persist_dir corresponds to one FAISS store instance.
-    Automatically reloads existing vector stores from disk on startup.
+    """Singleton registry, keyed by org_id, bound to ONE backend factory.
+
+    NOTE: this remains a process-wide singleton bound to a single factory —
+    if you need two backends live simultaneously (e.g. some orgs on
+    Pinecone, some on Qdrant), see the multi-backend note at the bottom of
+    this file before reaching for two VectorManager() calls.
     """
 
-    _instance = None
-    _lock = threading.Lock()
+    _instance: Optional["VectorManager"] = None
+    _instance_lock = threading.Lock()
 
-    def __new__(cls):
+    def __new__(cls, *args, **kwargs):
         if cls._instance is None:
-            with cls._lock:
+            with cls._instance_lock:
                 if cls._instance is None:
-                    cls._instance = super(VectorManager, cls).__new__(cls)
-                    cls._instance._stores: Dict[str, FaissVectorstore] = {}
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
         return cls._instance
 
-    def deep_sizeof(self,obj):
-        size = asizeof.asizeof(obj)
-        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-            if size < 1024:
-               return f"{size:.2f} {unit}"
-            size /= 1024
-    def __init__(self, base_dir: str = BASE_DIR):
-        # Only initialize once (avoid overwriting _stores)
-        if not hasattr(self, "_initialized"):
-            self._initialized = True
-            self.base_dir = base_dir
-            os.makedirs(base_dir, exist_ok=True)
-            self._reload_existing_stores()
+    def __init__(
+        self,
+        factory: Optional[VectorstoreFactory] = None,
+        embeddings=None,
+    ):
+        if self._initialized:
+            return
+        self._initialized = True
 
-    # --------------------------------------------------------------------------
-   
-    def _reload_existing_stores(self):
-        "" "Recursively scan base_dir for FAISS indexes and reload them."""
-        print("♻️ Reloading existing FAISS vector stores (recursive)...")
-        for root, dirs, files in os.walk(self.base_dir):
-          if "index.faiss" in files:
-            path = root
-            print(f"🔄 Found existing FAISS DB: {path}")
-            try:
-                vstore = FaissVectorstore(embeddings=embeddings, persist_dir=path)
-                vstore._load_or_create_store()
-                self._stores[path] = vstore
-                print(f"store :{path} , size: {sys.getsizeof(vstore)} , deep_size: {self.deep_sizeof(vstore)}")
-            except Exception as e:
-                print(f"⚠️ Failed to load store at {path}: {e}")
+        self.embeddings = embeddings or default_embeddings
+        self.factory = factory or VectorstoreFactory("faiss")
 
-    def create_store(self,embeddings,persist_dir:str)-> FaissVectorstore:
-        print(f"🆕 Creating new FAISS vector store at: {persist_dir}")
-        os.makedirs(persist_dir, exist_ok=True)
-        vstore = FaissVectorstore(embeddings=embeddings, persist_dir=persist_dir)
-        vstore._load_or_create_store()
-        self._stores[persist_dir] = vstore
-    def load_store(self, persist_dir: str) -> FaissVectorstore:
-            if os.path.exists(os.path.join(persist_dir, "index.faiss")):
-                print(f"♻️ Loading existing FAISS vector store from disk: {persist_dir}")
-                vstore = FaissVectorstore(embeddings=embeddings, persist_dir=persist_dir)
-                vstore._load_or_create_store()
-                self._stores[persist_dir] = vstore
-    # --------------------------------------------------------------------------
-    def get_store(self, embeddings, persist_dir: str) -> FaissVectorstore:
-        """Return an existing or newly created FAISS vector store."""
-        # Normalize path
-        # if not os.path.isabs(persist_dir):
-            # persist_dir = os.path.join( persist_dir)
+        self._stores: Dict[str, IVectorstore] = {}   # key: normalized org_id
+        self._stores_lock = threading.RLock()
 
-        if persist_dir not in self._stores:
-            if os.path.exists(os.path.join(persist_dir, "index.faiss")):
-                print(f"♻️ Loading existing FAISS vector store from disk: {persist_dir}")
-                vstore = FaissVectorstore(embeddings=embeddings, persist_dir=persist_dir)
-                vstore._load_or_create_store()
-                self._stores[persist_dir] = vstore
+    # ---------- Key derivation ----------
+    @staticmethod
+    def _key(org_id: str) -> str:
+        if not org_id or not org_id.strip():
+            raise ValueError("org_id is required and cannot be empty")
+        return org_id.strip().lower()
+
+    # ---------- Org lifecycle ----------
+    def create_organization(self, org_id: str) -> IVectorstore:
+        """Call this from your 'organization created' workflow (signup,
+        admin console, provisioning API — wherever a new org first comes
+        into existence in your system). Eagerly builds the org's store so
+        it exists before anyone tries to upload a document, rather than
+        being silently created on first use."""
+        key = self._key(org_id)
+        with self._stores_lock:
+            if key in self._stores:
+                logger.info("Organization already provisioned: %s", org_id)
+                return self._stores[key]
+
+            logger.info("Provisioning new vector store for organization: %s", org_id)
+            store = self.factory.build(self.embeddings, org_id)
+            if hasattr(store, "provision"):
+                store.provision()
+            self._stores[key] = store
+            return store
+
+    def delete_organization(self, org_id: str):
+        """Call this from your 'organization deleted' workflow. Wipes the
+        org's data at the backend level (not just from the in-memory
+        cache) if the backend supports it."""
+        key = self._key(org_id)
+        with self._stores_lock:
+            store = self._stores.get(key) or self.factory.build(self.embeddings, org_id)
+            if hasattr(store, "delete_organization"):
+                store.delete_organization()
             else:
-                print(f"🆕 Creating new FAISS vector store at: {persist_dir}")
-                os.makedirs(persist_dir, exist_ok=True)
-                vstore = FaissVectorstore(embeddings=embeddings, persist_dir=persist_dir)
-                vstore._load_or_create_store()
-                self._stores[persist_dir] = vstore
+                logger.warning(
+                    "Backend %s has no delete_organization() — remove data manually.",
+                    type(store).__name__,
+                )
+            self._stores.pop(key, None)
 
-        else:
-            print(f"✅ Reusing existing FAISS store in memory: {persist_dir}")
+    # ---------- Store access ----------
+    @traceable(
+        name="get_store",
+        project="core",
+        metadata={"description": "Get or lazily create an org's vector store"},
+        tags=["vectorstore"],
+    )
+    def get_store(self, org_id: str) -> IVectorstore:
+        """The single entry point for getting an org's store. Creates it
+        on first access if create_organization() was never called
+        explicitly (e.g. for orgs that existed before this pattern)."""
+        key = self._key(org_id)
 
-        return self._stores[persist_dir]
+        with self._stores_lock:
+            if key in self._stores:
+                logger.debug("Reusing existing store in memory: org_id=%s", org_id)
+                return self._stores[key]
 
-    def set_store(self,persist_dir,store):
-        self._stores[persist_dir] = store
-    # --------------------------------------------------------------------------
-    def list_stores(self):
-        """List all loaded FAISS store directories."""
-        return list(self._stores.keys())
+        # Build outside the lock (can be slow — disk IO / network), then
+        # publish under the lock, double-checking in case another thread
+        # raced us to create the same org's store.
+        store = self.factory.build(self.embeddings, org_id)
 
-    def remove_store(self, persist_dir: str):
-        """Remove store from memory (not from disk)."""
-        if persist_dir in self._stores:
-            del self._stores[persist_dir]
-            print(f"🗑️ Removed FAISS store from memory: {persist_dir}")
+        with self._stores_lock:
+            if key not in self._stores:
+                self._stores[key] = store
+            return self._stores[key]
 
-# ✅ Global singleton
-vectorManager = VectorManager()
-print("list of existing vector stores",vectorManager.list_stores())
+    def list_organizations(self):
+        with self._stores_lock:
+            return list(self._stores.keys())
+
+    def evict_from_memory(self, org_id: str):
+        """Remove from the in-memory cache only — does NOT delete the
+        org's data. Use delete_organization() for that."""
+        key = self._key(org_id)
+        with self._stores_lock:
+            if key in self._stores:
+                del self._stores[key]
+                logger.info("Evicted store from memory: org_id=%s", org_id)
+
+
+def get_vector_manager() -> VectorManager:
+    return VectorManager()
+
+vectorManager=get_vector_manager()
+
+# ---------------------------------------------------------------------------
+# Multi-backend note
+# ---------------------------------------------------------------------------
+# VectorManager() is a singleton bound to ONE factory for the whole process.
+# If some orgs need Pinecone and others need Qdrant simultaneously, don't
+# call VectorManager() twice with different factories — the second call
+# will silently return the first instance (because __init__ short-circuits
+# once _initialized is True).
+#
+# Instead, either:
+#   (a) route by org at a layer above VectorManager — look up which backend
+#       an org uses (e.g. from your orgs table), then call the matching
+#       factory.build(embeddings, org_id) directly, bypassing VectorManager
+#       for that case, or
+#   (b) tell me and I'll change VectorManager to hold a dict of
+#       {backend_name: VectorstoreFactory} and route get_store(org_id) by
+#       looking up each org's assigned backend from your database.

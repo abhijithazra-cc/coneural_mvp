@@ -1,16 +1,44 @@
 import os
+import time
+import base64
+import pickle
+import traceback
 from pathlib import Path
-from celery import Celery
 
-# # # app/routers/qa.py
+from celery import Celery, chain
+from celery.exceptions import SoftTimeLimitExceeded
+from celery.signals import worker_process_init
+from sqlalchemy.orm import Session
+from langchain_core.documents import Document
 
+from app.database import SessionLocal
 from app.models.doc_models import OrgDocument, DocChunk
+from app.utils.text_extractors import extract_text
+from app.utils.chunking import chunk_text
+from app.Rag.CompareDoc import CompareDoc
+# CHANGED: no longer import the FAISS-only `vectorManager` singleton or the
+# raw `embeddings`/`BASE_DIR` needed to build a FAISS persist_dir by hand.
+# Everything backend-specific now lives behind get_vector_manager().
+# Adjust these two import paths to wherever you placed VectorManager.py /
+# vectorstore_config.py in your tree (e.g. app.Rag.manager.VectorManager,
+# app.Rag.manager.vectorstore_config) if different from below.
+from app.Rag.VectorManager import get_vector_manager
+from app.Rag.Vectorstore_config import configure_vector_manager
+from app.Rag.HighlightText import HighlightText
+from app.Rag.DocumentConverter import DocumentConverter
+from app.Rag.PdfUploader import upload_pdf_to_github  # noqa: F401 (kept for future use)
+from app.services.document import _check_duplicate
+from app.services.embedding_token import (
+    _count_tokens_for_openai_embeddings,
+    user_license_and_token_update,
+    dept_license_and_token_update,
+    org_license_and_token_update,
+)
 
-# celery_app = Celery(
-#     "tasks",
-#     broker="redis://172.22.94.123:6379/0",
-#     backend="redis://172.22.94.123:6379/0",
-# )
+# =========================
+# Celery App
+# =========================
+
 celery_app = Celery(
     "tasks",
     broker="redis://localhost:6379/0",
@@ -23,153 +51,63 @@ celery_app.conf.update(
     result_serializer="json",
     task_acks_late=True,
     worker_prefetch_multiplier=1,
-    task_time_limit=300,
-    task_soft_time_limit=270,
+    # Raised from 300/270 as a stopgap for large document uploads
+    # (conversion + minhash + blob insert can legitimately take a while
+    # on big PDFs). Use soft limit to fail cleanly with a catchable
+    # exception before the hard limit SIGKILLs the worker.
+    task_time_limit=600,
+    task_soft_time_limit=540,
 )
-from app.Rag.HighlightText import HighlightText
 
-# from app.database import SessionLocal
-# import base64
-from app.Rag.PdfUploader import upload_pdf_to_github
+MAX_FILE_BYTES = 100 * 1024 * 1024
 
-# celery_app = Celery(
-#     "tasks",
-#     broker="redis://localhost:6379/0",
-#     backend="redis://localhost:6379/0",
-# )
-# # # celery_app.autodiscover_tasks(["app.tasks"])
+# Cap how much text we feed into minhashing. A signature computed on the
+# first N chars is still a valid fingerprint for duplicate detection and
+# avoids O(n^2)-ish blowups on very large documents.
+MINHASH_TEXT_CAP = 50_000
 
+CONVERTED_DIR = Path("app/converted_file")
+FILEDATA_DIR = Path("app/filedata")
+CITATION_DIR = Path("app/citation_files")
+
+
+# =========================
+# CHANGED: bind the .env-selected vectorstore backend to VectorManager
+# once per worker process, not once per task.
+#
+# Celery's default prefork pool means each worker is a separate OS
+# process, and VectorManager is a per-process singleton — so each forked
+# worker needs its own factory bound at startup. Without this signal,
+# the first call to get_vector_manager() in a task would silently fall
+# back to VectorManager's default ("faiss"), regardless of what
+# VECTORSTORE_BACKEND says in .env.
+# =========================
+
+@worker_process_init.connect
+def _init_vector_manager(**kwargs):
+    configure_vector_manager()
+    print(f"[worker_process_init] vector backend configured from .env (pid={os.getpid()})")
+
+
+# =========================
+# Helpers
+# =========================
 
 def _get_doc_by_id(db, org_id, document_id):
-
     docs = db.query(OrgDocument).filter(
         OrgDocument.org_id == org_id, OrgDocument.id == document_id
     )
     for u in docs:
         print("type u", type(u.file_bytes))
         return u.file_bytes, u.title
+    return None, None
 
 
-# # @celery_app.task
-# # def heavy_function(x):
-# #     import time
-# #     time.sleep(80)
-# #     return x * 2
-
-
-# # # @celery_app.task
-# # # def helper_filter_sources_by_citation(cited_files,org_id, src):
-
-# # #         # print(src.metadata['filename'].lower())
-# # #         db = SessionLocal()
-# # #         filename = src['metadata'].get('filename')
-# # #         result = {}
-
-# # #         if filename in cited_files:
-# # #             document_id = src['metadata']["document_id"]
-# # #             page_content = src['page_content']
-
-# # #             my_doc_bytes,title=_get_doc_by_id(db=db,org_id=org_id,document_id=document_id)
-# # #             print("doc_id",document_id,"my_doc_bytes type",type(my_doc_bytes))
-
-# # #             my_bytes=base64.b64decode(my_doc_bytes)
-
-# # #             obj=HighlightText()
-# # #             my_bytes=obj.highlight_text(my_bytes,chunks=page_content)
-# # #             response=upload_pdf_to_github(file_name=filename,owner="rahulkumarcollectcent",token="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",folder='uploads',repo='pdf-viewer')
-# # #             print(response)
-# # #             return {"filename":title,"link":response['link'],"document_id":document_id}
-# # #         return None
-
-
-# @celery_app.task
-# def filter_sources_by_citation(citations,org_id, sources):
-#     # 1. Extract all filenames mentioned after "citation"
-#     # Example fragment: "citation1: virat kohli 4.pdf"
-#     # cited_files = re.findall(r"([\w\s\-()]+\.(?:pdf|PDF))", response_text)
-
-#     # Normalize filenames
-#     db = SessionLocal()
-#     # current_user = get_current_active_user()
-#     cited_files = [f.strip() for f in citations]
-#     # print(cited_files)
-#     result = {}
-
-#     # 2. Filter sources matching the cited filenames
-#     for src in sources:
-#         # print(src.metadata['filename'].lower())
-
-#         filename = src['metadata'].get('filename')
-
-
-#         if filename in cited_files:
-#             document_id = src['metadata']["document_id"]
-#             page_content = src['page_content']
-#             # print("document_id",document_id)
-#             print("hi")
-#             if document_id not in result:
-#                  result[document_id] = {
-#                     "filename": filename,
-#                     "chunks": [],
-#                     "link":None
-#                 }
-
-#             # Append page content to dict
-#             result[document_id]["chunks"].append(page_content)
-#     # print(result)
-
-#     output=[]
-#     for document_id,items in result.items():
-
-#             my_doc_bytes,title=_get_doc_by_id(db=db,org_id=org_id,document_id=document_id)
-#             print("doc_id",document_id,"my_doc_bytes type",type(my_doc_bytes))
-#             # docs=_get_doc_by_id(db,current_user,document_id)
-#             # full_doc=""
-#             # for doc in docs:
-#             #      print("doc",doc)
-
-#             #      full_doc+=doc
-#             #full_doc=''.join(docs.page_content)
-#             # print("my docs",docs)
-#             # my_bytes=text_to_pdf_bytes(full_doc)
-#             # print(my_bytes)
-#             # print("my_doc_bytes",my_doc_bytes)
-#             my_bytes=base64.b64decode(my_doc_bytes)
-
-#             obj=HighlightText()
-#             my_bytes=obj.highlight_text(my_bytes,chunks=items['chunks'])
-#             # with open('my_pdf.pdf',mode='wb') as f:
-#             #       f.write(my_bytes)
-#             # my_bytes=base64.b64encode(my_bytes).decode()
-#             response=upload_pdf_to_github(file_name=items['filename'],owner="rahulkumarcollectcent",token="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",folder='uploads',repo='pdf-viewer',pdf_bytes=my_bytes)
-#             # print(response)
-
-#             result[document_id]['link']=response['link']
-#             # print("github token",response['github_token'])
-#             output.append({"filename":title,"link":result[document_id]['link'],"document_id":document_id})
-#             # print(my_bytes)
-#     # print("result",result)
-#     return output
-
-
-# # # def filter_sources_by_citation(citations,org_id, sources):
-
-# # #     # current_user = get_current_active_user()
-# # #     cited_files = [f.strip() for f in citations]
-# # #     # print(cited_files)
-# # #     output = []
-
-# # #     # 2. Filter sources matching the cited filenames
-# # #     for src in sources:
-# # #         # print(src.metadata['filename'].lower())
-
-# # #         filtered_result = helper_filter_sources_by_citation.delay(cited_files,org_id, src)
-# # #         output.append(filtered_result.id)
-# # #     return output
-
+# =========================
+# Citation / Highlight pipeline
+# =========================
 
 def filter_sources_by_citation(citations, org_id, sources):
-    # keep only real file citations
     cited_files = {c.strip() for c in citations}
 
     # filename → {document_id, chunks[]}
@@ -189,7 +127,6 @@ def filter_sources_by_citation(citations, org_id, sources):
         grouped[filename]["chunks"].append(chunk)
 
     output = []
-
     for filename, data in grouped.items():
         task = helper_filter_sources_by_citation.delay(
             filename, org_id, data["document_id"], data["chunks"]
@@ -199,487 +136,95 @@ def filter_sources_by_citation(citations, org_id, sources):
     return output
 
 
-# import time
-# from app.Rag.CompareDoc import CompareDoc
-# from app.services.document import _ensure_org_admin,_ensure_org_admin_or_dept_admin_or_author,_ensure_can_manage_global_docs,_ensure_can_manage_dept_docs,_ensure_same_org,_check_duplicate
-# from app.database import SessionLocal
-# import base64, pickle, time, traceback
-# from sqlalchemy.orm import Session
-# from app.Rag.VectorManager import vectorManager
-# from app.services.auth import get_current_active_user
-# from app.utils.chunking import extract_text_from_file, chunk_text
-# # from app.Rag.text_splitters.CharacterSplitter import CharacterSplitter
-# from app.utils.embeddings import embed_texts
-# from app.Rag.utils import embeddings,BASE_DIR
-# MAX_FILE_BYTES = 5 * 1024 * 1024
-# from app.services.embedding_token import user_license_and_token_update,_count_tokens_for_openai_embeddings,dept_license_and_token_update,user_license_and_token_update,org_license_and_token_update
-# from app.utils.faiss_manager import add_vectors
-# from app.utils.text_extractors import extract_text
-
-# # @celery_app.task
-# # def upload_file_to_db_task(
-
-# #     payload: None,
-# #     original_filename: str,
-# #     content_type: str,
-# #     org_id: int,
-# #     dept_id: int | None,
-# #     user_id: int,
-# #     tag: str,
-# #     doc_scope: str,
-# # ):
-# #     db: Session = SessionLocal()
-
-# #     try:
-# #         # 1) Read file
-
-
-# #         if not payload:
-# #             raise ValueError("Empty file")
-
-# #         if len(payload) > MAX_FILE_BYTES:
-# #             raise ValueError("File too large")
-
-# #         # 2) Extract text
-# #         filename = f"{org_id}_{user_id}_{int(time.time())}_{original_filename}"
-
-# #         text, docs = extract_text(
-# #             payload,
-# #             filename=filename,
-# #             mimetype=content_type or "",
-# #         )
-
-# #         new_text = text.lower()
-
-# #         duplicate = _check_duplicate(
-# #             db=db,
-# #             org_id=org_id,
-# #             dept_id=dept_id,
-# #             new_text=new_text,
-# #             threshold=0.8,
-# #         )
-
-# #         # 3) Minhash
-# #         compdoc = CompareDoc()
-# #         m = compdoc.create_minhash(text)
-# #         doc_hash = pickle.dumps(m)
-
-# #         # 4) Chunking
-# #         chunks = chunk_text(docs=docs, max_tokens=512, overlap=120)
-# #         if not chunks:
-# #             raise ValueError("No chunks extracted")
-
-# #         # 5) Store document
-# #         doc_bytes = base64.b64encode(payload)
-
-# #         doc = OrgDocument(
-# #             org_id=org_id,
-# #             dept_id=None if doc_scope == "global" else dept_id,
-# #             uploaded_by=user_id,
-# #             title=original_filename,
-# #             tag=tag,
-# #             scope=doc_scope,
-# #             filename=filename,
-# #             mime_type=content_type or "application/octet-stream",
-# #             size_bytes=len(payload),
-# #             file_bytes=doc_bytes,
-# #             hash_bytes=doc_hash,
-# #         )
-
-# #         db.add(doc)
-# #         db.flush()  # get doc.id
-# #         print("abjijeet")
-# #         # 6) Vector store
-# #         vs = vectorManager.get_store(
-# #             embeddings=embeddings,
-# #             persist_dir=f"{BASE_DIR}/{org_id}",
-# #         )
-
-# #         vs.add_documents(
-# #             documents=chunks,
-# #             document_id=doc.id,
-# #             dept_id=dept_id if doc_scope == "department" else "global",
-# #         )
-# #         print("sachin chaudhary")
-# #         # 7) Token accounting
-# #         token = sum(
-# #             _count_tokens_for_openai_embeddings(
-# #                 model_name="text-embedding-ada-002",
-# #                 texts=[chunk.page_content],
-# #             )
-# #             for chunk in chunks
-# #         )
-
-# #         if dept_id and doc_scope == "department":
-# #             user_license_and_token_update(db, user_id, dept_id, token)
-# #             dept_license_and_token_update(db, dept_id, org_id, token)
-# #         else:
-# #             org_license_and_token_update(db, org_id, token)
-
-# #         # 8) Save chunks
-# #         db.add_all(
-# #             [
-# #                 DocChunk(document_id=doc.id, content=chunk.page_content)
-# #                 for chunk in chunks
-# #             ]
-# #         )
-
-# #         db.commit()
-# #         return {"status": "success", "document_id": doc.id}
-
-# #     except Exception as e:
-# #         db.rollback()
-
-# #         # 🔥 Log full traceback
-# #         traceback.print_exc()
-
-# #         # Optional: update document status = FAILED
-# #         # update_doc_status(db, doc_id, "FAILED", str(e))
-
-# #         raise e
-
-# #     finally:
-# #         db.close()
-
-
-# @celery_app.task
-# def helper_filter_sources_by_citation(filename, org_id, document_id, chunks):
-#     db = SessionLocal()
-#     # time.sleep(20)  # Simulate a delay for heavy processing
-#     my_doc_bytes, title = _get_doc_by_id(db=db, org_id=org_id, document_id=document_id)
-
-#     my_bytes = base64.b64decode(my_doc_bytes)
-
-#     obj = HighlightText()
-#     if filename.lower().endswith(".csv"):
-#        chunks = obj.extract_chunks_from_docs(source_docs=chunks)
-#        print("chunks to highlight", chunks)
-#     my_bytes = obj.highlight_text(my_bytes, chunks=chunks)
-
-#     # response = upload_pdf_to_github(
-#     #     file_name=filename,
-#     #     owner="rahulkumarcollectcent",
-#     #     token=os.getenv("GITHUB_TOKEN"),
-#     #     folder="uploads",
-#     #     repo="pdf-viewer",
-#     #     pdf_bytes=my_bytes,
-#     # )
-#     # print(response)
-
-#     return {
-#         "filename": title,
-#         "pdf": base64.b64encode(my_bytes).decode("utf-8"),
-#         "document_id": document_id,
-#         "link": "link_placeholder",
-#     }
-
-from pathlib import Path
-
 @celery_app.task(bind=True)
 def helper_filter_sources_by_citation(self, filename, org_id, document_id, chunks):
+    """
+    Reads the PDF for `document_id`, highlights the given text chunks in it,
+    writes the highlighted result to app/citation_files/, and returns the
+    base64-encoded PDF.
+
+    Source-of-truth priority for the PDF bytes:
+      1. app/converted_file/{filename_stem}.pdf on disk (always a valid PDF,
+         written at upload time regardless of original file type)
+      2. doc.file_bytes from the DB (LONGBLOB, base64-encoded PDF bytes) as fallback
+    """
     db = SessionLocal()
-    my_doc_bytes, title = _get_doc_by_id(db=db, org_id=org_id, document_id=document_id)
+    try:
+        doc = db.query(OrgDocument).filter(
+            OrgDocument.org_id == org_id,
+            OrgDocument.id == document_id,
+        ).first()
 
-    my_bytes = base64.b64decode(my_doc_bytes)
+        if not doc:
+            raise ValueError(f"No document found for org_id={org_id}, document_id={document_id}")
 
-    obj = HighlightText()
-    if filename.lower().endswith(".csv"):
-        chunks = obj.extract_chunks_from_docs(source_docs=chunks)
-        print("chunks to highlight", chunks)
-    my_bytes = obj.highlight_text(my_bytes, chunks=chunks)
+        my_bytes = None
 
-    # ✅ Write PDF bytes using pathlib
-    task_id = self.request.id
-    output_path = Path("app/citation_files") / f"{task_id}.pdf"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(my_bytes)
+        # 1) Prefer the on-disk converted PDF (source of truth)
+        if doc.file_path and Path(doc.file_path).exists():
+            candidate = Path(doc.file_path).read_bytes()
+            if candidate.startswith(b"%PDF"):
+                my_bytes = candidate
 
-    print(f"PDF written to {output_path}")
+        # 2) Fallback: try the conventional converted_file location by filename,
+        #    in case file_path wasn't populated for this row.
+        if not my_bytes:
+            pdf_filename = Path(doc.filename).stem + ".pdf"
+            fallback_path = CONVERTED_DIR / pdf_filename
+            if fallback_path.exists():
+                candidate = fallback_path.read_bytes()
+                if candidate.startswith(b"%PDF"):
+                    my_bytes = candidate
 
-    return {
-        "filename": title,
-        "pdf": base64.b64encode(my_bytes).decode("utf-8"),
-        "document_id": document_id,
-        "link": "link_placeholder",
-    }
-# import time
-# import base64
-# import pickle
-# import traceback
-# from celery import Celery, chain
-# from sqlalchemy.orm import Session
+        # 3) Fallback: DB blob (LONGBLOB -> raw bytes, base64-encoded PDF)
+        if not my_bytes and doc.file_bytes:
+            try:
+                candidate = base64.b64decode(bytes(doc.file_bytes))
+                if candidate.startswith(b"%PDF"):
+                    my_bytes = candidate
+            except Exception:
+                pass
 
-# # =========================
-# # Celery App
-# # =========================
+        if not my_bytes or not my_bytes.startswith(b"%PDF"):
+            raise ValueError(
+                f"No valid PDF found for document_id={document_id} "
+                f"(file_path={doc.file_path!r})"
+            )
 
-# celery_app = Celery(
-#     "tasks",
-#     broker="redis://localhost:6379/0",
-#     backend="redis://localhost:6379/0",
-# )
+        obj = HighlightText()
+        my_bytes, pages = obj.highlight_text(my_bytes, chunks=chunks)
 
-# celery_app.conf.update(
-#     task_serializer="json",
-#     accept_content=["json"],
-#     # result_serializer="json"
+        task_id = self.request.id
+        pages_str = "_".join(str(n) for n in pages)
+        output_path = CITATION_DIR / f"{task_id}@{pages_str}.pdf"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(my_bytes)
 
-#     task_acks_late=True,
-#     worker_prefetch_multiplier=1,
+        print(f"PDF written to {output_path}")
 
-#     task_time_limit=300,
-#     task_soft_time_limit=270,
-# )
+        return {
+            "filename": doc.title,
+            "pdf": base64.b64encode(my_bytes).decode("utf-8"),
+            "document_id": document_id,
+            "link": "link_placeholder",
+            "pages": pages,
+        }
+    finally:
+        db.close()
 
-# # =========================
-# # Imports (local app)
-# # =========================
-
-# from app.database import SessionLocal
-# from app.models.doc_models import OrgDocument, DocChunk
-# from app.utils.text_extractors import extract_text
-# from app.utils.chunking import chunk_text
-# from app.Rag.CompareDoc import CompareDoc
-# from app.Rag.VectorManager import vectorManager
-# from app.Rag.utils import BASE_DIR
-# from app.Rag.utils import embeddings
-# from app.services.document import _check_duplicate
-# from app.services.embedding_token import (
-#     _count_tokens_for_openai_embeddings,
-#     user_license_and_token_update,
-#     dept_license_and_token_update,
-#     org_license_and_token_update,
-# )
-
-# MAX_FILE_BYTES = 5 * 1024 * 1024
-
-# # =========================
-# # TASK 1: Extract + Store
-# # =========================
-
-# @celery_app.task(
-
-#     autoretry_for=(Exception,),
-#     retry_backoff=10,
-#     retry_kwargs={"max_retries": 3},
-# )
-# def extract_and_store_doc_task(
-
-#     payload: bytes,
-#     original_filename: str,
-#     content_type: str,
-#     org_id: int,
-#     dept_id: int | None,
-#     user_id: int,
-#     tag: str,
-#     doc_scope: str,
-# ):
-#     db: Session = SessionLocal()
-#     try:
-#         if not payload or len(payload) > MAX_FILE_BYTES:
-#             raise ValueError("Invalid file")
-
-#         filename = f"{org_id}_{user_id}_{int(time.time())}_{original_filename}"
-
-#         text, docs = extract_text(
-#             payload,
-#             filename=filename,
-#             mimetype=content_type or "",
-#         )
-
-#         _check_duplicate(
-#             db=db,
-#             org_id=org_id,
-#             dept_id=dept_id,
-#             new_text=text.lower(),
-#             threshold=0.8,
-#         )
-
-#         compdoc = CompareDoc()
-#         doc_hash = pickle.dumps(compdoc.create_minhash(text))
-
-#         doc = OrgDocument(
-#             org_id=org_id,
-#             dept_id=None if doc_scope == "global" else dept_id,
-#             uploaded_by=user_id,
-#             title=original_filename,
-#             tag=tag,
-#             scope=doc_scope,
-#             filename=filename,
-#             mime_type=content_type or "application/octet-stream",
-#             size_bytes=len(payload),
-#             file_bytes=base64.b64encode(payload),
-#             hash_bytes=doc_hash,
-#         )
-
-#         db.add(doc)
-#         db.commit()
-#         db.refresh(doc)
-
-#         return {
-#             "doc_id": doc.id,
-#             "docs": docs,
-#             "org_id": org_id,
-#             "dept_id": dept_id,
-#             "scope": doc_scope,
-#         }
-
-#     except Exception:
-#         db.rollback()
-#         traceback.print_exc()
-#         raise
-#     finally:
-#         db.close()
-
-# # =========================
-# # TASK 2: Chunk + Save
-# # =========================
-
-# @celery_app.task
-# def chunk_and_store_task( payload: dict):
-#     db: Session = SessionLocal()
-#     try:
-#         chunks = chunk_text(
-#             docs=payload["docs"],
-#             max_tokens=512,
-#             overlap=120,
-#         )
-
-#         if not chunks:
-#             raise ValueError("No chunks extracted")
-
-#         db.add_all(
-#             [
-#                 DocChunk(
-#                     document_id=payload["doc_id"],
-#                     content=chunk.page_content,
-#                 )
-#                 for chunk in chunks
-#             ]
-#         )
-#         db.commit()
-
-#         return {
-#             "doc_id": payload["doc_id"],
-#             # "chunks": [c.page_content for c in chunks],
-#             "org_id": payload["org_id"],
-#             "dept_id": payload["dept_id"],
-#             "scope": payload["scope"],
-#         }
-
-#     finally:
-#         db.close()
-
-# # =========================
-# # TASK 3: Embed + FAISS
-# # =========================
-
-# @celery_app.task( time_limit=180)
-# def embed_and_index_task( payload: dict):
-#     db: Session = SessionLocal()
-#     try:
-#         vs = vectorManager.get_store(
-#             embeddings=embeddings,
-#             persist_dir=f"{BASE_DIR}/{payload['org_id']}",
-#         )
-
-#         vs.add_texts(
-#             texts=payload["chunks"],
-#             document_id=payload["doc_id"],
-#             dept_id=payload["dept_id"] if payload["scope"] == "department" else "global",
-#         )
-
-#         token_count = sum(
-#             _count_tokens_for_openai_embeddings(
-#                 model_name="text-embedding-ada-002",
-#                 texts=[text],
-#             )
-#             for text in payload["chunks"]
-#         )
-
-#         if payload["dept_id"] and payload["scope"] == "department":
-#             user_license_and_token_update(db, payload["doc_id"], payload["dept_id"], token_count)
-#             dept_license_and_token_update(db, payload["dept_id"], payload["org_id"], token_count)
-#         else:
-#             org_license_and_token_update(db, payload["org_id"], token_count)
-
-#         db.commit()
-#         return {"status": "success", "doc_id": payload["doc_id"]}
-
-#     finally:
-#         db.close()
-
-# # =========================
-# # PIPELINE (ENTRY POINT)
-# # =========================
-# @celery_app.task
-# def upload_file_to_db_task(
-#     payload: bytes,
-#     original_filename: str,
-#     content_type: str,
-#     org_id: int,
-#     dept_id: int | None,
-#     user_id: int,
-#     tag: str,
-#     doc_scope: str,
-# ):
-#     return chain(
-#         extract_and_store_doc_task.s(
-#             payload,
-#             original_filename,
-#             content_type,
-#             org_id,
-#             dept_id,
-#             user_id,
-#             tag,
-#             doc_scope,
-#         ),
-#         chunk_and_store_task.s(),
-#         embed_and_index_task.s(),
-#     ).apply_async()
-
-
-import time
-import base64
-import pickle
-import traceback
-from celery import Celery, chain
-from sqlalchemy.orm import Session
-
-
-from app.database import SessionLocal
-from app.models.doc_models import OrgDocument, DocChunk
-from app.utils.text_extractors import extract_text
-from app.utils.chunking import chunk_text
-from app.Rag.CompareDoc import CompareDoc
-from app.Rag.VectorManager import vectorManager
-from app.Rag.utils import BASE_DIR, embeddings
-from app.services.document import _check_duplicate
-from app.services.embedding_token import (
-    _count_tokens_for_openai_embeddings,
-    user_license_and_token_update,
-    dept_license_and_token_update,
-    org_license_and_token_update,
-)
-
-from langchain_core.documents import Document
-
-
-MAX_FILE_BYTES = 5 * 1024 * 1024
 
 # =========================
-# TASK 1: Extract + Store
+# Upload pipeline
 # =========================
-from app.Rag.DocumentConverter import DocumentConverter
-from pathlib import Path
-
 
 @celery_app.task(
+    bind=True,
     autoretry_for=(Exception,),
     retry_backoff=10,
     retry_kwargs={"max_retries": 3},
 )
 def extract_and_store_doc_task(
+    self,
     payload: bytes,
     original_filename: str,
     filename: str,
@@ -690,20 +235,44 @@ def extract_and_store_doc_task(
     tag: str,
     doc_scope: str,
 ):
+    """
+    1. Extracts text from the uploaded file (any supported type).
+    2. Ensures a PDF version of the file exists:
+         - if the upload was already a PDF, use it as-is
+         - otherwise, convert it to PDF
+    3. Always writes that final PDF to app/converted_file/{filename_stem}.pdf
+       so there is a single reliable on-disk source of truth for the PDF,
+       regardless of what the original upload format was.
+    4. Stores the PDF bytes (base64-encoded) in OrgDocument.file_bytes (LONGBLOB)
+       and the disk path in OrgDocument.file_path.
+
+    Includes timing instrumentation (printed to worker logs) so slow steps
+    are visible instead of the task just hitting the hard time limit and
+    getting SIGKILLed with no context.
+    """
     db: Session = SessionLocal()
     try:
         if not payload:
             raise ValueError("Empty file")
-
         if len(payload) > MAX_FILE_BYTES:
             raise ValueError("File too large")
 
+        # ---- Extract text ----
+        t0 = time.monotonic()
         text, docs = extract_text(
             payload,
             filename=filename,
             mimetype=content_type or "",
         )
+        print(f"[TIMING] extract_text: {time.monotonic() - t0:.2f}s (text_len={len(text)})")
 
+        # ---- Duplicate check ----
+        # NOTE: unchanged — this is a separate, DB/minhash-based dup check
+        # (_check_duplicate), independent of the vectorstore's own
+        # is_similar_document(). Both exist for different reasons: this one
+        # runs before any embedding call to save the cost entirely; the
+        # vectorstore one is a secondary check on the actual chunk vectors.
+        t0 = time.monotonic()
         _check_duplicate(
             db=db,
             org_id=org_id,
@@ -711,16 +280,49 @@ def extract_and_store_doc_task(
             new_text=text.lower(),
             threshold=0.8,
         )
-        doc_converter = DocumentConverter()
-        # filename_without_ext = Path(original_filename).stem
-        file_ext = Path(original_filename).suffix
-        if file_ext != ".pdf":
-            payload = doc_converter.convert_to_pdf_bytes(
-                file_bytes=payload, filename=original_filename, extracted_text=text
-            )
-        compdoc = CompareDoc()
-        doc_hash = pickle.dumps(compdoc.create_minhash(text))
+        print(f"[TIMING] _check_duplicate: {time.monotonic() - t0:.2f}s")
 
+        # ---- Ensure PDF bytes ----
+        file_ext = Path(original_filename).suffix.lower()
+        t0 = time.monotonic()
+
+        if file_ext == ".pdf":
+            # Already a PDF — use as-is
+            stored_payload = payload
+        else:
+            # Convert to PDF first
+            print("Its not pdf, converting to pdf before storing")
+            doc_converter = DocumentConverter()
+            stored_payload = doc_converter.convert_to_pdf_bytes(
+                file_bytes=payload,
+                filename=original_filename,
+                extracted_text=text,
+            )
+        print(f"[TIMING] pdf conversion: {time.monotonic() - t0:.2f}s")
+
+        if not stored_payload or not stored_payload.startswith(b"%PDF"):
+            raise ValueError(
+                f"Conversion did not produce a valid PDF for {original_filename} "
+                f"(len={len(stored_payload) if stored_payload else 0})"
+            )
+
+        # ---- Write PDF to disk (source of truth) ----
+        t0 = time.monotonic()
+        pdf_filename = Path(filename).stem + ".pdf"
+        CONVERTED_DIR.mkdir(parents=True, exist_ok=True)
+        converted_path = CONVERTED_DIR / pdf_filename
+        converted_path.write_bytes(stored_payload)
+        print(f"[TIMING] write pdf to disk: {time.monotonic() - t0:.2f}s -> {converted_path}")
+
+        # ---- Minhash (capped input to avoid pathological slowness) ----
+        t0 = time.monotonic()
+        compdoc = CompareDoc()
+        minhash_input = text[:MINHASH_TEXT_CAP]
+        doc_hash = pickle.dumps(compdoc.create_minhash(minhash_input))
+        print(f"[TIMING] minhash: {time.monotonic() - t0:.2f}s (input_len={len(minhash_input)})")
+
+        # ---- Build + commit DB row ----
+        t0 = time.monotonic()
         doc = OrgDocument(
             org_id=org_id,
             dept_id=None if doc_scope == "global" else dept_id,
@@ -729,22 +331,20 @@ def extract_and_store_doc_task(
             tag=tag,
             scope=doc_scope,
             filename=filename,
-            mime_type=content_type or "application/octet-stream",
-            size_bytes=len(payload),
-            file_bytes=base64.b64encode(payload),
+            mime_type="application/pdf",
+            size_bytes=len(stored_payload),
+            file_path=str(converted_path),                  # disk source of truth
+            file_bytes=base64.b64encode(stored_payload),     # LONGBLOB: raw bytes is correct
             hash_bytes=doc_hash,
         )
 
         db.add(doc)
         db.commit()
         db.refresh(doc)
+        print(f"[TIMING] db commit: {time.monotonic() - t0:.2f}s (doc_id={doc.id})")
 
-        # ✅ Convert LangChain Document → dict (JSON safe)
         serializable_docs = [
-            {
-                "page_content": d.page_content,
-                "metadata": d.metadata,
-            }
+            {"page_content": d.page_content, "metadata": d.metadata}
             for d in docs
         ]
 
@@ -757,6 +357,14 @@ def extract_and_store_doc_task(
             "scope": doc_scope,
         }
 
+    except SoftTimeLimitExceeded:
+        db.rollback()
+        print(
+            f"[TIMEOUT] extract_and_store_doc_task soft time limit hit for "
+            f"{original_filename} (task_id={self.request.id})"
+        )
+        raise
+
     except Exception:
         db.rollback()
         traceback.print_exc()
@@ -765,39 +373,22 @@ def extract_and_store_doc_task(
         db.close()
 
 
-# =========================
-# TASK 2: Chunk + Store
-# =========================
-
-
 @celery_app.task
 def chunk_and_store_task(payload: dict):
     db: Session = SessionLocal()
     try:
-        # ✅ Rebuild LangChain Document objects
         docs = [
-            Document(
-                page_content=d["page_content"],
-                metadata=d["metadata"],
-            )
+            Document(page_content=d["page_content"], metadata=d["metadata"])
             for d in payload["docs"]
         ]
-        # text=" ".join([doc.page_content for doc in docs])
-        chunks = chunk_text(
-            docs=docs,
-            max_tokens=512,
-            overlap=120,
-        )
 
+        chunks = chunk_text(docs=docs, max_tokens=512, overlap=120)
         if not chunks:
             raise ValueError("No chunks extracted")
 
         db.add_all(
             [
-                DocChunk(
-                    document_id=payload["doc_id"],
-                    content=chunk.page_content,
-                )
+                DocChunk(document_id=payload["doc_id"], content=chunk.page_content)
                 for chunk in chunks
             ]
         )
@@ -807,40 +398,45 @@ def chunk_and_store_task(payload: dict):
             "doc_id": payload["doc_id"],
             "chunks": [
                 {"page_content": c.page_content, "metadata": c.metadata} for c in chunks
-            ],  # ✅ strings only
+            ],
             "user_id": payload["user_id"],
             "org_id": payload["org_id"],
             "dept_id": payload["dept_id"],
             "scope": payload["scope"],
         }
-
     finally:
         db.close()
-
-
-# =========================
-# TASK 3: Embed + FAISS
-# =========================
 
 
 @celery_app.task(time_limit=180)
 def embed_and_index_task(payload: dict):
     db: Session = SessionLocal()
     try:
-        vs = vectorManager.get_store(
-            embeddings=embeddings,
-            persist_dir=f"{BASE_DIR}/{payload['org_id']}",
-        )
-        print("payload in embed_and_index_task", payload)
+        # CHANGED: was —
+        #   vs = vectorManager.get_store(
+        #       embeddings=embeddings,
+        #       persist_dir=f"{BASE_DIR}/{payload['org_id']}",
+        #   )
+        # which hardcoded FAISS and built its persist_dir by hand.
+        #
+        # Now: org_id is the only thing this task provides. Which backend
+        # (faiss/pinecone/qdrant) it resolves to, and how that backend
+        # turns org_id into a directory/index/collection, was already
+        # decided at worker startup by _init_vector_manager() reading
+        # .env — this task doesn't know or care.
+        manager = get_vector_manager()
+        org_id = str(payload["org_id"])  # vectorstore constructors require org_id as str
+        vs = manager.get_store(org_id)
+
         documents = [
             Document(page_content=chunk["page_content"], metadata=chunk["metadata"])
             for chunk in payload["chunks"]
         ]
-        # print("dept_id",payload["dept_id"],"scope",payload["scope"])
-        if payload["scope"] == "department":
-            dept_id = payload["dept_id"]
-        else:
-            dept_id = "global"
+
+        # CHANGED: stringify dept_id for consistency with how it's written
+        # everywhere else (metadata equality filters are string-based —
+        # mixing int/str here would silently break dept-scoped search).
+        dept_id = str(payload["dept_id"]) if payload["scope"] == "department" else "global"
 
         vs.add_documents(
             documents=documents,
@@ -855,52 +451,14 @@ def embed_and_index_task(payload: dict):
             )
             for chunk in payload["chunks"]
         )
-        user_license_and_token_update(
-            db,
-            payload["user_id"],
-            token_count,
-        )
-        org_license_and_token_update(
-            db,
-            payload["org_id"],
-            token_count,
-        )
-        # if payload["dept_id"] and payload["scope"] == "department":
-        #     user_license_and_token_update(
-        #         db,
-        #         payload["user_id"],
-        #         payload["dept_id"],
-        #         token_count,
-        #     )
-        #     # user_license_and_token_update(
-        #     #     db,
-        #     #     payload["doc_id"],
-        #     #     payload["dept_id"],
-        #     #     token_count,
-        #     # )
-        #     dept_license_and_token_update(
-        #         db,
-        #         payload["dept_id"],
-        #         payload["org_id"],
-        #         token_count,
-        #     )
-        # else:
-        #     org_license_and_token_update(
-        #         db,
-        #         payload["org_id"],
-        #         token_count,
-        #     )
+
+        user_license_and_token_update(db, payload["user_id"], token_count)
+        org_license_and_token_update(db, payload["org_id"], token_count)
 
         db.commit()
         return {"status": "success", "doc_id": payload["doc_id"]}
-
     finally:
         db.close()
-
-
-# =========================
-# PIPELINE ENTRY POINT
-# =========================
 
 
 @celery_app.task

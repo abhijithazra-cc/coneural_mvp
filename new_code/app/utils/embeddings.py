@@ -14,8 +14,10 @@ if not OPENAI_API_KEY:
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Model & dimension: text-embedding-3-small → 1536 dims
-EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
-EMBED_DIM = 1536
+EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-large")
+EMBED_DIM = 3072
+
+
 
 
 def embed_texts(texts: List[str]) -> np.ndarray:

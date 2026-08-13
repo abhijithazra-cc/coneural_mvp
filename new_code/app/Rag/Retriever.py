@@ -1,4 +1,5 @@
 
+from langsmith import traceable
 class Retriever():
 
 
@@ -11,11 +12,11 @@ class Retriever():
     #   def get_retreiver_by_document_id(self,vector_store,search_type,top_n,document_id):
     #       self.retriever  = vector_store.as_retriever(search_type=search_type, search_kwargs={"k": int(top_n), "filter": {"document_id": int(document_id)} })
     #       return self.retriever
-
+      @traceable(name="get_retreiver_by_document_id", project="core", metadata={"description": "Get retriever by document ID"}, tags=["retriever","documents"])
       def get_retreiver_by_document_id(self, vector_store, search_type, top_n, document_id):
     # Handle both single id and list of ids
            if isinstance(document_id, list):
-            filter_query = {"document_id": {"$in": [int(d) for d in document_id]}}
+            filter_query = {"document_id":  [int(d) for d in document_id]}
            else:
             filter_query = {"document_id": int(document_id)}
 
