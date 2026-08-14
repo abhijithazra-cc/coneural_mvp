@@ -50,6 +50,9 @@ from app.schemas.request_schema import AskRequest, AskRequestOnDocument
 from app.services import qa_service
 from app.services.auth import get_current_active_user
 from app.utils.celery_app import celery_app, filter_sources_by_citation
+from app.repository.ChatThreadRepository import ChatThreadRepository
+from app.repository.ChatMessageRepository import ChatMessageRepository
+
 
 router = APIRouter(prefix="/qa", tags=["qa"])
 
@@ -57,6 +60,7 @@ router = APIRouter(prefix="/qa", tags=["qa"])
 # ─────────────────────────────────────────────────────────────
 # Threads
 # ─────────────────────────────────────────────────────────────
+
 
 @router.get("/list_user_threads")
 @traceable(name="list_user_threads", project="core", metadata={"description": "List user's threads created"},tags=["threads"])
@@ -67,22 +71,8 @@ def list_user_threads(
     limit: int = Query(20, le=100),
     name: Optional[str] = Query(None),
 ):
-    query = db.query(
-        ChatThreads.id, ChatThreads.description, ChatThreads.updated_at
-    ).filter(
-        ChatThreads.org_id == current_user.org_id,
-        ChatThreads.user_id == current_user.id,
-    )
-    if name and name.strip():
-        query = query.filter(ChatThreads.description.ilike(f"%{name.strip()}%"))
-    if next_id:
-        query = query.filter(ChatThreads.id < next_id)
-
-    messages = query.order_by(ChatThreads.updated_at.desc()).limit(limit + 1).all()
-
-    has_more = len(messages) > limit
-    messages = messages[:limit]
-    new_next_id = messages[-1].id if messages else None
+    chat_thread_obj = ChatThreadRepository(db)
+    res = chat_thread_obj.list_user_threads(user_id=current_user.id,org_id=current_user.org_id, next_id=next_id, limit=limit, name=name)
 
     response = [
         {
@@ -90,9 +80,46 @@ def list_user_threads(
             "title": msg.description or "",
             "date": msg.updated_at.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S"),
         }
-        for msg in messages
+        for msg in res.items
     ]
-    return {"messages": response, "next_id": new_next_id, "has_more": has_more}
+    return {"messages": response, "next_id": res.next_cursor, "has_more": res.has_more}
+
+
+# @router.get("/list_user_threads")
+# @traceable(name="list_user_threads", project="core", metadata={"description": "List user's threads created"},tags=["threads"])
+# def list_user_threads(
+#     db: Session = Depends(get_db),
+#     current_user: UserModel = Depends(get_current_active_user),
+#     next_id: Optional[int] = 0,
+#     limit: int = Query(20, le=100),
+#     name: Optional[str] = Query(None),
+# ):
+#     query = db.query(
+#         ChatThreads.id, ChatThreads.description, ChatThreads.updated_at
+#     ).filter(
+#         ChatThreads.org_id == current_user.org_id,
+#         ChatThreads.user_id == current_user.id,
+#     )
+#     if name and name.strip():
+#         query = query.filter(ChatThreads.description.ilike(f"%{name.strip()}%"))
+#     if next_id:
+#         query = query.filter(ChatThreads.id < next_id)
+
+#     messages = query.order_by(ChatThreads.updated_at.desc()).limit(limit + 1).all()
+
+#     has_more = len(messages) > limit
+#     messages = messages[:limit]
+#     new_next_id = messages[-1].id if messages else None
+
+#     response = [
+#         {
+#             "thread_id": msg.id,
+#             "title": msg.description or "",
+#             "date": msg.updated_at.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S"),
+#         }
+#         for msg in messages
+#     ]
+#     return {"messages": response, "next_id": new_next_id, "has_more": has_more}
 
 
 @router.delete("/delete_thread/{thread_id}", summary="Delete thread by id")
@@ -102,20 +129,30 @@ def delete_thread(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    thread = (
-        db.query(ChatThreads)
-        .filter(
-            ChatThreads.id == thread_id,
-            ChatThreads.org_id == current_user.org_id,
-            ChatThreads.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not thread:
-        raise HTTPException(status_code=404, detail="Thread not found")
-    db.delete(thread)
-    db.commit()
+    chat_thread_obj = ChatThreadRepository(db)
+    chat_thread_obj.delete(id=thread_id)
     return {"message": "Thread deleted successfully"}
+# @router.delete("/delete_thread/{thread_id}", summary="Delete thread by id")
+# @traceable(name="delete_thread", project="core", metadata={"description": "Delete thread by id"}, tags=["threads"])
+# def delete_thread(
+#     thread_id: int,
+#     db: Session = Depends(get_db),
+#     current_user: UserModel = Depends(get_current_active_user),
+# ):
+#     thread = (
+#         db.query(ChatThreads)
+#         .filter(
+#             ChatThreads.id == thread_id,
+#             ChatThreads.org_id == current_user.org_id,
+#             ChatThreads.user_id == current_user.id,
+#         )
+#         .first()
+#     )
+#     if not thread:
+#         raise HTTPException(status_code=404, detail="Thread not found")
+#     db.delete(thread)
+#     db.commit()
+#     return {"message": "Thread deleted successfully"}
 
 
 @router.get("/title/{thread_id}", summary="Get thread title")
@@ -125,18 +162,29 @@ def get_description(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    thread = (
-        db.query(ChatThreads)
-        .filter(
-            ChatThreads.id == thread_id,
-            ChatThreads.org_id == current_user.org_id,
-            ChatThreads.user_id == current_user.id,
-        )
-        .first()
-    )
+    thread=ChatThreadRepository(db).get_by_id(id=thread_id)
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
     return {"title": thread.description or ""}
+# @router.get("/title/{thread_id}", summary="Get thread title")
+# @traceable(name="get_thread_title", project="core", metadata={"description": "Get thread title by id"}, tags=["threads"])
+# def get_description(
+#     thread_id: int,
+#     db: Session = Depends(get_db),
+#     current_user: UserModel = Depends(get_current_active_user),
+# ):
+#     thread = (
+#         db.query(ChatThreads)
+#         .filter(
+#             ChatThreads.id == thread_id,
+#             ChatThreads.org_id == current_user.org_id,
+#             ChatThreads.user_id == current_user.id,
+#         )
+#         .first()
+#     )
+#     if not thread:
+#         raise HTTPException(status_code=404, detail="Thread not found")
+#     return {"title": thread.description or ""}
 
 
 @router.put("/rename_title/{thread_id}", summary="Update thread title")
@@ -147,21 +195,33 @@ def update_description(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    thread = (
-        db.query(ChatThreads)
-        .filter(
-            ChatThreads.id == thread_id,
-            ChatThreads.org_id == current_user.org_id,
-            ChatThreads.user_id == current_user.id,
-        )
-        .first()
-    )
+    thread=ChatThreadRepository(db).update_chat_thread_description(thread_id=thread_id, description=description)
     if not thread:
-        raise HTTPException(status_code=404, detail="Thread not found")
-    thread.description = description
-    db.add(thread)
-    db.commit()
+        return HTTPException(status_code=404, detail="Thread not found")
     return {"message": "title updated successfully"}
+# @router.put("/rename_title/{thread_id}", summary="Update thread title")
+# @traceable(name="update_thread_title", project="core", metadata={"description": "Update thread title by id"}, tags=["threads"])
+# def update_description(
+#     thread_id: int,
+#     description: str,
+#     db: Session = Depends(get_db),
+#     current_user: UserModel = Depends(get_current_active_user),
+# ):
+#     thread = (
+#         db.query(ChatThreads)
+#         .filter(
+#             ChatThreads.id == thread_id,
+#             ChatThreads.org_id == current_user.org_id,
+#             ChatThreads.user_id == current_user.id,
+#         )
+#         .first()
+#     )
+#     if not thread:
+#         raise HTTPException(status_code=404, detail="Thread not found")
+#     thread.description = description
+#     db.add(thread)
+#     db.commit()
+#     return {"message": "title updated successfully"}
 
 
 
@@ -171,17 +231,27 @@ def ask_thread(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    next_provider = qa_service.get_next_llm_provider(db, current_user)
-    user_thread = ChatThreads(
-        user_id=current_user.id,
-        org_id=current_user.org_id,
-        description="",
-        llm_provider=next_provider,
-    )
-    db.add(user_thread)
-    db.commit()
-    db.flush()
-    return {"thread_id": user_thread.id, "title": user_thread.description or ""}
+    
+    thread=ChatThreadRepository(db).create_thread(org_id=current_user.org_id, user_id=current_user.id)
+    return {"thread_id": thread.id, "title": thread.description or ""}
+
+# @router.get("/thread_id", summary="Requesting new Thread ID")
+# @traceable(name="ask_thread", project="core", metadata={"description": "Requesting new Thread ID"}, tags=["threads","users"])
+# def ask_thread(
+#     db: Session = Depends(get_db),
+#     current_user: UserModel = Depends(get_current_active_user),
+# ):
+#     next_provider = qa_service.get_next_llm_provider(db, current_user)
+#     user_thread = ChatThreads(
+#         user_id=current_user.id,
+#         org_id=current_user.org_id,
+#         description="",
+#         llm_provider=next_provider,
+#     )
+#     db.add(user_thread)
+#     db.commit()
+#     db.flush()
+#     return {"thread_id": user_thread.id, "title": user_thread.description or ""}
 
 
 @router.get("/chat_history/{thread_id}", summary="Get chat history by thread id")
@@ -193,18 +263,10 @@ def get_chat_history(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    query = db.query(ChatMessage).filter(ChatMessage.thread_id == thread_id)
     document_ids = qa_service.get_selected_docs_ids_by_thread_id(db, thread_id)
-
-    if next_id:
-        query = query.filter(ChatMessage.id < next_id)
-
-    messages = query.order_by(ChatMessage.id.desc()).limit(limit + 1).all()
-
-    has_more = len(messages) > limit
-    messages = messages[:limit]
-    new_next_id = messages[-1].id if messages else None
-
+    chat_repo_obj = ChatMessageRepository(db)
+    res=chat_repo_obj.load_chat_history(thread_id=thread_id, limit=limit, next_id=next_id)
+    print(res)
     response = [
         {
             "id": msg.id,
@@ -213,15 +275,53 @@ def get_chat_history(
             "html_response": msg.html_response,
             "links": msg.citation,
         }
-        for msg in messages
+        for msg in res.items
     ]
 
     return {
         "message": response,
-        "next_id": new_next_id,
-        "has_more": has_more,
+        "next_id": res.next_cursor,
+        "has_more": res.has_more,
         "document_ids": document_ids.get("doc_ids", []) if isinstance(document_ids, dict) else document_ids,
     }
+# @router.get("/chat_history/{thread_id}", summary="Get chat history by thread id")
+# @traceable(name="get_chat_history", project="core", metadata={"description": "Get chat history by thread id"}, tags=["threads"])
+# def get_chat_history(
+#     thread_id: int,
+#     limit: int = Query(20, le=100),
+#     next_id: Optional[int] = 0,
+#     db: Session = Depends(get_db),
+#     current_user: UserModel = Depends(get_current_active_user),
+# ):
+#     query = db.query(ChatMessage).filter(ChatMessage.thread_id == thread_id)
+#     document_ids = qa_service.get_selected_docs_ids_by_thread_id(db, thread_id)
+
+#     if next_id:
+#         query = query.filter(ChatMessage.id < next_id)
+
+#     messages = query.order_by(ChatMessage.id.desc()).limit(limit + 1).all()
+
+#     has_more = len(messages) > limit
+#     messages = messages[:limit]
+#     new_next_id = messages[-1].id if messages else None
+
+#     response = [
+#         {
+#             "id": msg.id,
+#             "query": msg.query,
+#             "response": msg.response,
+#             "html_response": msg.html_response,
+#             "links": msg.citation,
+#         }
+#         for msg in messages
+#     ]
+
+#     return {
+#         "message": response,
+#         "next_id": new_next_id,
+#         "has_more": has_more,
+#         "document_ids": document_ids.get("doc_ids", []) if isinstance(document_ids, dict) else document_ids,
+#     }
 
 
 # ─────────────────────────────────────────────────────────────
